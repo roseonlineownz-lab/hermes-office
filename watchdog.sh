@@ -29,6 +29,10 @@ restart_service "Hermes API" "http://127.0.0.1:8642/health" "systemctl --user re
 restart_service "OpenClaw Gateway" "http://127.0.0.1:18791/" "systemctl --user restart openclaw-gateway"
 restart_service "Qdrant" "http://127.0.0.1:6333/healthz" "nohup qdrant --config-path /tmp/qdrant-config.yaml &>/dev/null &"
 
+# Voice services
+restart_service "VibeVoice" "http://127.0.0.1:8093/config" "systemctl restart vibevoice"
+restart_service "VibeVoice Bridge" "http://127.0.0.1:8094/health" "systemctl restart vibevoice-bridge"
+
 # Docker services — just check, don't restart (docker handles restart: unless-stopped)
 for container in novamaster-postgres novamaster-redis novamaster-n8n novamaster-grafana; do
   status=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "missing")

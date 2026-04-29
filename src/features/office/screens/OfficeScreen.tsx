@@ -142,6 +142,7 @@ import { KanbanDisabledPanel } from "@/features/office/components/panels/KanbanD
 import { PlaybooksPanel } from "@/features/office/components/panels/PlaybooksPanel";
 import { SkillsMarketplaceModal } from "@/features/office/components/panels/SkillsMarketplaceModal";
 import { TaskBoardPanel } from "@/features/office/components/panels/TaskBoardPanel";
+import { BusinessHUD } from "@/features/office/components/BusinessHUD";
 import { JukeboxPanel } from "@/features/spotify-jukebox/components/JukeboxPanel";
 import { JukeboxDisabledPanel } from "@/features/spotify-jukebox/components/JukeboxDisabledPanel";
 import { executeBrowserJukeboxCommand } from "@/features/spotify-jukebox/agentBridge";
@@ -4199,6 +4200,19 @@ export function OfficeScreen({
 
   return (
     <main className="relative h-full w-full overflow-hidden bg-black">
+      <BusinessHUD
+        agents={state.agents.map((a) => ({
+          id: a.agentId,
+          name: a.name,
+          status:
+            status === "connected"
+              ? a.streamText
+                ? "running"
+                : "idle"
+              : "connecting",
+        }))}
+        connected={status === "connected"}
+      />
       {showGatewayLoadingOverlay ? (
         <div
           className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-[#120a05]/76"

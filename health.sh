@@ -57,7 +57,7 @@ run_checks() {
   results+=("$(check_http "NovaMaster Office" http://127.0.0.1:3000/)")
   results+=("$(check_http "Hermes Adapter" http://127.0.0.1:18789/health)")
   results+=("$(check_http "Hermes API" http://127.0.0.1:8642/health)")
-  results+=("$(check_http "OpenClaw Gateway" http://127.0.0.1:18791/)")
+  results+=("$(check_http "OpenClaw Gateway" http://127.0.0.1:18791/health)")
   results+=("$(check_http "GoClaw" http://127.0.0.1:18790/health)")
   results+=("$(check_http "MetaClaw" http://127.0.0.1:30000/health)")
   results+=("$(check_http "Space Agent" http://127.0.0.1:3003/)")
@@ -69,6 +69,8 @@ run_checks() {
   results+=("$(check_http "LiteLLM" http://127.0.0.1:4000/)")
   results+=("$(check_http "NovaMaster API" http://127.0.0.1:8091/health)")
   results+=("$(check_http "ViralHunter API" http://127.0.0.1:8092/health)")
+  results+=("$(check_http "VibeVoice" http://127.0.0.1:8093/config)")
+  results+=("$(check_http "VibeVoice Bridge" http://127.0.0.1:8094/health)")
 
   # Database
   results+=("$(check_http "Qdrant" http://127.0.0.1:6333/healthz)")
@@ -89,6 +91,7 @@ run_checks() {
 
   # UI / Web
   results+=("$(check_http "Open WebUI" http://127.0.0.1:3080/)")
+  results+=("$(check_http "Jet Admin" http://127.0.0.1:3082/api/)")
   results+=("$(check_http "ComfyUI" http://127.0.0.1:8188/)")
   results+=("$(check_http "Portainer" http://127.0.0.1:9000/)")
   results+=("$(check_http "HTTP Fileserver" http://127.0.0.1:8090/)")
@@ -158,7 +161,7 @@ run_checks() {
   for r in "${results[@]}"; do
     IFS='|' read -r status name url latency <<< "$r"
     case "$name" in
-      Ollama|LiteLLM|NovaMaster\ API|ViralHunter\ API)
+      Ollama|LiteLLM|NovaMaster\ API|ViralHunter\ API|VibeVoice|VibeVoice\ Bridge)
         if [[ "$status" == "UP" ]]; then
           echo -e "  ${GREEN}✓${NC} $name ${YELLOW}($latency)${NC}"
         else
@@ -218,7 +221,7 @@ run_checks() {
   for r in "${results[@]}"; do
     IFS='|' read -r status name url latency <<< "$r"
     case "$name" in
-      Open\ WebUI|ComfyUI|Portainer|HTTP\ Fileserver|Open\ Notebook|Open\ Notebook\ API)
+      Open\ WebUI|Jet\ Admin|ComfyUI|Portainer|HTTP\ Fileserver|Open\ Notebook|Open\ Notebook\ API)
         if [[ "$status" == "UP" ]]; then
           echo -e "  ${GREEN}✓${NC} $name ${YELLOW}($latency)${NC}"
         else

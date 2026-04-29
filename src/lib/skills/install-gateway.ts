@@ -11,10 +11,10 @@ import {
   type PackagedSkillInstallResult,
 } from "@/lib/skills/types";
 
-const normalizeRequired = (value: string, field: string): string => {
-  const trimmed = value.trim();
+const normalizeRequired = (value: string | undefined | null, field: string): string => {
+  const trimmed = (value ?? "").trim();
   if (!trimmed) {
-    throw new Error(`${field} is required.`);
+    throw new Error(`${field} is required but was not provided by the gateway. Try reconnecting or selecting a different agent.`);
   }
   return trimmed;
 };

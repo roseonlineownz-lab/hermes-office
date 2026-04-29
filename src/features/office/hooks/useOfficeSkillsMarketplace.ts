@@ -218,7 +218,7 @@ export const useOfficeSkillsMarketplace = ({
     async (skillName: string, enabled: boolean) => {
       const entry =
         skillsReport?.skills?.find(
-          (skill) => skill.name.trim() === skillName.trim(),
+          (skill) => (skill.name ?? "").trim() === skillName.trim(),
         ) ?? null;
       await runSkillMutation({
         skillKey: entry?.skillKey ?? skillName,
@@ -245,13 +245,13 @@ export const useOfficeSkillsMarketplace = ({
       if (!installOption) {
         setMessage({
           kind: "error",
-          text: `No guided install is available for ${skill.name.trim()}.`,
+          text: `No guided install is available for ${(skill.name ?? "").trim()}.`,
         });
         return;
       }
       await runSkillMutation({
         skillKey: skill.skillKey,
-        successMessage: `Installed dependencies for ${skill.name.trim()}.`,
+        successMessage: `Installed dependencies for ${(skill.name ?? "").trim()}.`,
         run: async () => {
           await installSkill(client, {
             name: skill.name,
@@ -277,7 +277,7 @@ export const useOfficeSkillsMarketplace = ({
 
       await runSkillMutation({
         skillKey: packagedSkill.skillKey,
-        successMessage: `Successfully installed ${packagedSkill.name.trim()} in the selected workspace. Enable it for the agent from the CLAW3D tab.`,
+        successMessage: `Successfully installed ${(packagedSkill.name ?? "").trim()} in the selected workspace. Enable it for the agent from the CLAW3D tab.`,
         run: async (_agentId, report) => {
           await installPackagedSkillViaGatewayAgent({
             client,
@@ -377,7 +377,7 @@ export const useOfficeSkillsMarketplace = ({
           agents.find((agent) => agent.agentId === targetAgentId)?.name ?? "the main agent";
         setMessage({
           kind: "success",
-          text: `Installed and enabled ${packagedSkill.name.trim()} for ${agentName}.`,
+          text: `Installed and enabled ${(packagedSkill.name ?? "").trim()} for ${agentName}.`,
         });
       } catch (err) {
         const nextMessage =
@@ -429,7 +429,7 @@ export const useOfficeSkillsMarketplace = ({
     async (skill: SkillStatusEntry) => {
       await runSkillMutation({
         skillKey: skill.skillKey,
-        successMessage: `${skill.name.trim()} removed from gateway files.`,
+        successMessage: `${(skill.name ?? "").trim()} removed from gateway files.`,
         run: async (_agentId, report) => {
           await removeSkillFromGateway({
             client,

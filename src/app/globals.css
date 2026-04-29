@@ -1371,3 +1371,76 @@ textarea:focus::-webkit-scrollbar {
 .super-saiyan {
   animation: superSaiyanGlow 3s ease-in-out infinite;
 }
+
+/* NovaMaster Business HUD — Iron Man Cockpit */
+.hud-metric-card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.hud-metric-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, color-mix(in oklch, var(--primary) 6%, transparent) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 240ms ease;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.hud-metric-card:hover::before {
+  opacity: 1;
+}
+
+.hud-scanline {
+  position: relative;
+}
+
+.hud-scanline::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    color-mix(in oklch, var(--primary) 3%, transparent) 2px,
+    color-mix(in oklch, var(--primary) 3%, transparent) 4px
+  );
+  pointer-events: none;
+  opacity: 0.4;
+}
+
+.hud-glow-text {
+  text-shadow: 0 0 8px color-mix(in oklch, var(--primary) 60%, transparent),
+               0 0 20px color-mix(in oklch, var(--primary) 25%, transparent);
+}
+
+.hud-border-glow {
+  box-shadow: 0 0 1px color-mix(in oklch, var(--primary) 30%, transparent),
+              inset 0 0 1px color-mix(in oklch, var(--primary) 15%, transparent);
+}
+
+.hud-pulse {
+  animation: hudPulse 3s ease-in-out infinite;
+}
+
+@keyframes hudPulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+.hud-flicker {
+  animation: hudFlicker 8s linear infinite;
+}
+
+@keyframes hudFlicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  93% { opacity: 0.85; }
+  94% { opacity: 1; }
+  96% { opacity: 0.92; }
+  97% { opacity: 1; }
+}

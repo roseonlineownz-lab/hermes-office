@@ -94,8 +94,8 @@ export type SkillRemoveResult = {
 export type PackagedSkillInstallRequest = {
   packageId: string;
   source: RemovableSkillSource;
-  workspaceDir: string;
-  managedSkillsDir: string;
+  workspaceDir?: string;
+  managedSkillsDir?: string;
   agentId?: string;
   agentName?: string;
 };
