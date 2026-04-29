@@ -349,7 +349,10 @@
   .dark body::before {
     inset: 0;
     transform: none;
-    background: var(--background);
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in oklch, var(--primary) 8%, transparent) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 110%, color-mix(in oklch, var(--primary) 4%, transparent) 0%, transparent 50%),
+      var(--background);
   }
 
   .dark body::after {
@@ -1316,11 +1319,11 @@ textarea:focus::-webkit-scrollbar {
 }
 
 .chat-composer-input {
-  color: #ffffff;
+  color: var(--foreground);
 }
 
 .type-agent-name {
-  color: #ffffff;
+  color: var(--foreground);
 }
 
 .chat-composer-input:focus,
@@ -1352,4 +1355,19 @@ textarea:focus::-webkit-scrollbar {
     opacity: 0.95;
     transform: translateY(-1px);
   }
+}
+
+@keyframes superSaiyanGlow {
+  0%, 100% {
+    box-shadow: 0 0 8px color-mix(in oklch, var(--primary) 25%, transparent),
+                0 0 20px color-mix(in oklch, var(--primary) 10%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 16px color-mix(in oklch, var(--primary) 40%, transparent),
+                0 0 40px color-mix(in oklch, var(--primary) 15%, transparent);
+  }
+}
+
+.super-saiyan {
+  animation: superSaiyanGlow 3s ease-in-out infinite;
 }

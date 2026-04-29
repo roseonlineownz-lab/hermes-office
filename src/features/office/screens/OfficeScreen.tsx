@@ -4008,8 +4008,8 @@ export function OfficeScreen({
   const githubSkill = useMemo<SkillStatusEntry | null>(
     () =>
       marketplace.skillsReport?.skills.find((skill) => {
-        const normalizedKey = skill.skillKey.trim().toLowerCase();
-        const normalizedName = skill.name.trim().toLowerCase();
+        const normalizedKey = (skill.skillKey ?? "").trim().toLowerCase();
+        const normalizedName = (skill.name ?? "").trim().toLowerCase();
         return normalizedKey === "github" || normalizedName === "github";
       }) ?? null,
     [marketplace.skillsReport],
@@ -4017,8 +4017,8 @@ export function OfficeScreen({
   const soundclawSkill = useMemo<SkillStatusEntry | null>(
     () =>
       marketplace.skillsReport?.skills.find((skill) => {
-        const normalizedKey = skill.skillKey.trim().toLowerCase();
-        const normalizedName = skill.name.trim().toLowerCase();
+        const normalizedKey = (skill.skillKey ?? "").trim().toLowerCase();
+        const normalizedName = (skill.name ?? "").trim().toLowerCase();
         return normalizedKey === "soundclaw" || normalizedName === "soundclaw";
       }) ?? null,
     [marketplace.skillsReport],
@@ -4026,8 +4026,8 @@ export function OfficeScreen({
   const taskManagerSkill = useMemo<SkillStatusEntry | null>(
     () =>
       marketplace.skillsReport?.skills.find((skill) => {
-        const normalizedKey = skill.skillKey.trim().toLowerCase();
-        const normalizedName = skill.name.trim().toLowerCase();
+        const normalizedKey = (skill.skillKey ?? "").trim().toLowerCase();
+        const normalizedName = (skill.name ?? "").trim().toLowerCase();
         return normalizedKey === "task-manager" || normalizedName === "task-manager";
       }) ?? null,
     [marketplace.skillsReport],
