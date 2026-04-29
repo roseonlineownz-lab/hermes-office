@@ -57,7 +57,7 @@ run_checks() {
   results+=("$(check_http "NovaMaster Office" http://127.0.0.1:3000/)")
   results+=("$(check_http "Hermes Adapter" http://127.0.0.1:18789/health)")
   results+=("$(check_http "Hermes API" http://127.0.0.1:8642/health)")
-  results+=("$(check_http "OpenClaw Gateway" http://127.0.0.1:18791/health)")
+  results+=("$(check_http "OpenClaw Gateway" http://127.0.0.1:18791/)")
   results+=("$(check_http "GoClaw" http://127.0.0.1:18790/health)")
   results+=("$(check_http "MetaClaw" http://127.0.0.1:30000/health)")
   results+=("$(check_http "Space Agent" http://127.0.0.1:3003/)")
