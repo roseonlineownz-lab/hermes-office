@@ -90,6 +90,7 @@ run_checks() {
   results+=("$(check_http "CrabTrap" http://127.0.0.1:8082/ 3)")
 
   # UI / Web
+  results+=("$(check_http "Dify" http://127.0.0.1:3081/install)")
   results+=("$(check_http "Open WebUI" http://127.0.0.1:3080/)")
   results+=("$(check_http "Jet Admin" http://127.0.0.1:3082/api/)")
   results+=("$(check_http "ComfyUI" http://127.0.0.1:8188/)")
@@ -221,7 +222,7 @@ run_checks() {
   for r in "${results[@]}"; do
     IFS='|' read -r status name url latency <<< "$r"
     case "$name" in
-      Open\ WebUI|Jet\ Admin|ComfyUI|Portainer|HTTP\ Fileserver|Open\ Notebook|Open\ Notebook\ API)
+      Open\ WebUI|Dify|Jet\ Admin|ComfyUI|Portainer|HTTP\ Fileserver|Open\ Notebook|Open\ Notebook\ API)
         if [[ "$status" == "UP" ]]; then
           echo -e "  ${GREEN}✓${NC} $name ${YELLOW}($latency)${NC}"
         else
