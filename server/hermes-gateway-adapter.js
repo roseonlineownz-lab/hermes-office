@@ -1175,16 +1175,41 @@ async function handleMethod(method, params, id, sendEvent) {
 
 function startAdapter() {
   const httpServer = http.createServer((req, res) => {
+    // CORS headers for browser requests
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
+    if (req.url === "/health") { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true })); return; }
     res.writeHead(200, { "Content-Type": "text/plain" });
     res.end("Hermes Gateway Adapter – OK\n");
   });
 
-  const wss = new WebSocketServer({ server: httpServer });
+  const wss = new WebSocketServer({
+    server: httpServer,
+    verifyClient: (info, cb) => {
+      console.log(`[hermes-adapter] WS upgrade from origin: ${info.origin || "none"}, secure: ${info.secure}`);
+      cb(true);
+    },
+  });
   wss.on("error", (err) => {
     if (err.code !== "EADDRINUSE") console.error("[hermes-adapter] Server error:", sanitizeErrorMessage(err));
   });
 
+  // Ping/pong keepalive — prevents 1006 on idle connections
+  const PING_INTERVAL_MS = 30000;
+  setInterval(() => {
+    for (const client of wss.clients) {
+      if (client.readyState !== WebSocket.OPEN) continue;
+      if (!client.isAlive) { client.terminate(); continue; }
+      client.isAlive = false;
+      client.ping();
+    }
+  }, PING_INTERVAL_MS);
+
   wss.on("connection", (ws) => {
+    ws.isAlive = true;
+    ws.on("pong", () => { ws.isAlive = true; });
     let connected = false;
     let globalSeq = 0;
 
