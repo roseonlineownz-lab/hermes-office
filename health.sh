@@ -71,6 +71,7 @@ run_checks() {
   results+=("$(check_http "ViralHunter API" http://127.0.0.1:8092/health)")
   results+=("$(check_http "VibeVoice" http://127.0.0.1:8093/config)")
   results+=("$(check_http "VibeVoice Bridge" http://127.0.0.1:8094/health)")
+  results+=("$(check_http "ClawMem Serve" http://127.0.0.1:7438/health)")
 
   # Database
   results+=("$(check_http "Qdrant" http://127.0.0.1:6333/healthz)")
@@ -162,7 +163,7 @@ run_checks() {
   for r in "${results[@]}"; do
     IFS='|' read -r status name url latency <<< "$r"
     case "$name" in
-      Ollama|LiteLLM|NovaMaster\ API|ViralHunter\ API|VibeVoice|VibeVoice\ Bridge)
+      Ollama|LiteLLM|NovaMaster\ API|ViralHunter\ API|VibeVoice|VibeVoice\ Bridge|ClawMem\ Serve)
         if [[ "$status" == "UP" ]]; then
           echo -e "  ${GREEN}✓${NC} $name ${YELLOW}($latency)${NC}"
         else
@@ -267,3 +268,18 @@ if $WATCH_MODE; then
 else
   run_checks
 fi
+  # Voice
+  results+=("$(check_http "NovaMaster Voice" http://127.0.0.1:0/health 2)")  # voice runs as systemd, no HTTP port
+  results+=("$(check_http "ClawMem" http://127.0.0.1:7438/health 3)")
+
+  # Orchestration
+  results+=("$(check_http "LangGraph Pipeline" http://127.0.0.1:8127/health 3)")
+  results+=("$(check_http "LangGraph Orchestrator" http://127.0.0.1:8128/health 3)")
+  results+=("$(check_http "Lead Engine" http://127.0.0.1:8130/health 3)")
+  results+=("$(check_http "Scraper Bot" http://127.0.0.1:8131/health 3)")
+  results+=("$(check_http "Email Agent" http://127.0.0.1:8132/health 3)")
+  results+=("$(check_http "SA Orchestrator" http://127.0.0.1:8133/health 3)")
+  results+=("$(check_http "CrewAI" http://127.0.0.1:8135/health 3)")
+
+  # Dashboard section - add Jet Admin
+  results+=("$(check_http "Jet Admin" http://127.0.0.1:3082/api/ 3)")

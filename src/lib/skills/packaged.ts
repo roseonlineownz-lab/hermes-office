@@ -424,6 +424,50 @@ soundclaw.previous(): void
 6. Agent reports back what was played or linked
 `;
 
+const VOICE_NOVA_SKILL_MD = `---
+name: voice-nova
+slug: voice-nova
+version: 1.0.0
+description: Speak as Nova or transcribe user audio via the VibeVoice Bridge. Use when the user says speak, say it, transcribe, or wants voice output.
+metadata: {"clawdbot":{"emoji":"🔊","requires":{"bins":[],"env":["VIBEVOICE_BRIDGE_URL"]},"os":["linux","darwin","win32"]}}
+---
+
+## Overview
+
+Voice Nova integrates the VibeVoice TTS/STT bridge (port 8094) with the Office agent.
+It enables the agent to speak responses aloud and transcribe user audio.
+
+## Service Info
+
+| Property | Value |
+|----------|-------|
+| Bridge URL | http://127.0.0.1:8094 |
+| TTS Endpoint | POST /tts |
+| STT Endpoint | POST /stt |
+| Health | http://127.0.0.1:8094/health |
+
+## Available Actions
+
+\`\`\`
+// Synthesize speech from text. Agent speaks the response aloud.
+voice-nova.speak({ text: string, voice?: string }): { ok: boolean, audioUrl?: string }
+
+// Transcribe audio (sent as multipart/form-data or base64).
+voice-nova.transcribe({ audio: string }): { text: string }
+
+// Check if the voice bridge is available.
+voice-nova.status(): { tts: boolean, stt: boolean }
+\`\`\`
+
+## Agent workflow
+
+1. Agent receives a voice request ("say this", "speak", "transcribe audio")
+2. Agent checks bridge health via voice-nova.status()
+3. For TTS: calls voice-nova.speak({ text }) to synthesize and play audio
+4. For STT: calls voice-nova.transcribe({ audio }) to convert speech to text
+5. Agent reports result back to user
+`;
+
 const PACKAGED_SKILL_FILES: Record<string, PackagedSkillFile[]> = {
   "todo-board": [
     {
@@ -449,6 +493,12 @@ const PACKAGED_SKILL_FILES: Record<string, PackagedSkillFile[]> = {
     {
       relativePath: "SKILL.md",
       content: SOUNDCLAW_SKILL_MD,
+    },
+  ],
+  "voice-nova": [
+    {
+      relativePath: "SKILL.md",
+      content: VOICE_NOVA_SKILL_MD,
     },
   ],
 };
