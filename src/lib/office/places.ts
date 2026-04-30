@@ -7,6 +7,7 @@ export const OFFICE_INTERACTION_TARGETS = [
   "qa_lab",
   "sms_booth",
   "phone_booth",
+  "coffee_machine",
 ] as const;
 
 export type OfficeInteractionTargetId =
@@ -18,6 +19,7 @@ export const OFFICE_SKILL_TRIGGER_MOVEMENT_TARGETS = [
   "gym",
   "jukebox",
   "qa_lab",
+  "coffee_machine",
 ] as const;
 
 export type OfficeSkillTriggerMovementTarget =
@@ -28,7 +30,8 @@ type OfficeSkillTriggerAnimationHoldKey =
   | "githubHoldByAgentId"
   | "gymHoldByAgentId"
   | "jukeboxHoldByAgentId"
-  | "qaHoldByAgentId";
+  | "qaHoldByAgentId"
+  | "coffeeMachineHoldByAgentId";
 
 export const OFFICE_SKILL_TRIGGER_PLACE_REGISTRY: Record<
   OfficeSkillTriggerMovementTarget,
@@ -64,6 +67,11 @@ export const OFFICE_SKILL_TRIGGER_PLACE_REGISTRY: Record<
     label: "QA Lab",
     interactionTarget: "qa_lab",
     animationHoldKey: "qaHoldByAgentId",
+  },
+  coffee_machine: {
+    label: "Voice Station",
+    interactionTarget: "coffee_machine",
+    animationHoldKey: "coffeeMachineHoldByAgentId",
   },
 };
 
@@ -121,6 +129,22 @@ export const DEFAULT_SKILL_TRIGGER_FALLBACKS_BY_SKILL_KEY: Record<
     movementTarget: "jukebox",
     skipIfAlreadyThere: true,
   },
+  "voice-nova": {
+    anyPhrases: [
+      "speak",
+      "say it",
+      "read it out",
+      "voice reply",
+      "talk to me",
+      "transcribe",
+      "luister",
+      "spreek",
+      "zeg het",
+      "lees voor",
+    ],
+    movementTarget: "coffee_machine",
+    skipIfAlreadyThere: true,
+  },
 };
 
 export const buildOfficeSkillTriggerHoldMaps = (
@@ -139,6 +163,7 @@ export const buildOfficeSkillTriggerHoldMaps = (
     gymHoldByAgentId: {} as Record<string, boolean>,
     jukeboxHoldByAgentId: {} as Record<string, boolean>,
     qaHoldByAgentId: {} as Record<string, boolean>,
+    coffeeMachineHoldByAgentId: {} as Record<string, boolean>,
     skillGymHoldByAgentId: {} as Record<string, boolean>,
   };
 

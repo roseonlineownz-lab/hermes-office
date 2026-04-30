@@ -1,4 +1,4 @@
-export type VoiceReplyProvider = "elevenlabs";
+export type VoiceReplyProvider = "vibevoice" | "elevenlabs";
 
 export type VoiceReplySynthesisRequest = {
   text: string;
@@ -7,8 +7,12 @@ export type VoiceReplySynthesisRequest = {
   speed?: number;
 };
 
+const VIBEVOICE_BRIDGE_URL =
+  process.env.VIBEVOICE_BRIDGE_URL?.trim() || "http://127.0.0.1:8094";
+const DEFAULT_VOICE_REPLY_PROVIDER: VoiceReplyProvider = "vibevoice";
+const DEFAULT_VIBEVOICE_VOICE = "en-Carter_man";
+
 const ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1/text-to-speech";
-const DEFAULT_VOICE_REPLY_PROVIDER: VoiceReplyProvider = "elevenlabs";
 const DEFAULT_ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
 const DEFAULT_ELEVENLABS_MODEL_ID =
   process.env.ELEVENLABS_MODEL_ID?.trim() || "eleven_flash_v2_5";
@@ -21,20 +25,35 @@ const normalizeVoiceSpeed = (value: number | null | undefined): number => {
 const normalizeVoiceId = (value: string | null | undefined): string => {
   const explicit = value?.trim();
   if (explicit) return explicit;
-  const fromEnv = process.env.ELEVENLABS_VOICE_ID?.trim();
-  if (fromEnv) return fromEnv;
-  return DEFAULT_ELEVENLABS_VOICE_ID;
+  return DEFAULT_VIBEVOICE_VOICE;
+};
+
+const synthesizeWithVibeVoice = async (
+  request: VoiceReplySynthesisRequest
+): Promise<Response> => {
+  const voice = normalizeVoiceId(request.voiceId);
+  const text = request.text;
+  const url = `${VIBEVOICE_BRIDGE_URL}/tts?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(voice)}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { Accept: "audio/wav" },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const detail = (await response.text().catch(() => "")).trim();
+    throw new Error(detail || "VibeVoice synthesis failed.");
+  }
+  return response;
 };
 
 const synthesizeWithElevenLabs = async (
   request: VoiceReplySynthesisRequest
 ): Promise<Response> => {
-  // TODO: Create Claw3D voice and text skill.
   const apiKey = process.env.ELEVENLABS_API_KEY?.trim();
   if (!apiKey) {
     throw new Error("Missing ELEVENLABS_API_KEY.");
   }
-  const voiceId = normalizeVoiceId(request.voiceId);
+  const voiceId = request.voiceId?.trim() || DEFAULT_ELEVENLABS_VOICE_ID;
   const speed = normalizeVoiceSpeed(request.speed);
   const response = await fetch(
     `${ELEVENLABS_API_URL}/${encodeURIComponent(voiceId)}/stream?output_format=mp3_44100_128`,
@@ -71,6 +90,8 @@ export const synthesizeVoiceReply = async (
 ): Promise<Response> => {
   const provider = request.provider ?? DEFAULT_VOICE_REPLY_PROVIDER;
   switch (provider) {
+    case "vibevoice":
+      return synthesizeWithVibeVoice(request);
     case "elevenlabs":
       return synthesizeWithElevenLabs(request);
     default:

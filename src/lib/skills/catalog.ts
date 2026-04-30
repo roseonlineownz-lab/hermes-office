@@ -3,7 +3,7 @@ import type {
   SkillStatusEntry,
 } from "@/lib/skills/types";
 
-export type PackagedSkillId = "soundclaw" | "task-manager" | "todo-board";
+export type PackagedSkillId = "soundclaw" | "task-manager" | "todo-board" | "voice-nova";
 
 export type PackagedSkillDefinition = {
   packageId: PackagedSkillId;
@@ -51,6 +51,15 @@ const PACKAGED_SKILLS: PackagedSkillDefinition[] = [
     installSource: "openclaw-workspace",
     creatorName: "iamlukethedev",
     creatorUrl: "https://github.com/iamlukethedev",
+  },
+  {
+    packageId: "voice-nova",
+    skillKey: "voice-nova",
+    name: "voice-nova",
+    description: "Speak as Nova or transcribe user audio via the VibeVoice Bridge. Use when the user says speak, say it, transcribe, or wants voice output.",
+    installSource: "openclaw-workspace",
+    creatorName: "NovaMaster",
+    creatorUrl: "http://localhost:8888/",
   },
 ];
 
