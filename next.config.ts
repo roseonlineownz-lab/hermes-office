@@ -8,7 +8,7 @@ const securityHeaders = [
       "default-src 'self'",
       "base-uri 'self'",
       "form-action 'self'",
-      "frame-ancestors 'self'",
+      "frame-ancestors 'self' http://localhost:* http://127.0.0.1:* file:// hermes-desktop://",
       "img-src 'self' data: blob: http: https:",
       "font-src 'self' data: https:",
       "style-src 'self' 'unsafe-inline' https:",
@@ -37,7 +37,7 @@ const securityHeaders = [
   },
   {
     key: "X-Frame-Options",
-    value: "SAMEORIGIN",
+    value: "ALLOWALL",
   },
   {
     key: "Permissions-Policy",
@@ -45,7 +45,7 @@ const securityHeaders = [
   },
   {
     key: "Cross-Origin-Resource-Policy",
-    value: "same-origin",
+    value: "cross-origin",
   },
 ];
 

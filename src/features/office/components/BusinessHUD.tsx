@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useEcosystemMetrics } from "@/features/office/hooks/useEcosystemMetrics";
+import { useClaw3DBackend } from "@/features/office/hooks/useClaw3DBackend";
 
 type HUDMetric = {
   label: string;
@@ -61,34 +62,6 @@ function useAnimatedCounter(target: number, duration = 800) {
   return display;
 }
 
-const HUD_METRICS: HUDMetric[] = [
-  { label: "LEADS", value: "1,240", delta: "+12%", deltaPositive: true, glowColor: "cyan" },
-  { label: "OUTREACH", value: "3,800", delta: "+8.2%", deltaPositive: true, glowColor: "blue" },
-  { label: "RESPONSES", value: "420", delta: "+23%", deltaPositive: true, glowColor: "emerald" },
-  { label: "CLOSED", value: "37", delta: "+5.4%", deltaPositive: true, glowColor: "amber" },
-  { label: "REVENUE", value: "€8,920", delta: "+18%", deltaPositive: true, glowColor: "fuchsia" },
-  { label: "SERVICES", value: "--", delta: "loading", deltaPositive: true, glowColor: "green" },
-];
-
-const AGENT_ZONE_MAP: Record<string, string> = {
-  lead_engine: "LEADS",
-  scraper_bot: "SCRAPER",
-  enrichment_bot: "ENRICH",
-  outreach_email: "EMAIL",
-  outreach_whatsapp: "WHATSAPP",
-  closer_ai: "CLOSER",
-  analytics_ai: "ANALYTICS",
-  content_ai: "CONTENT",
-  "nova-automation": "AUTO",
-  "predator-drone": "DRONE",
-  "viral-engine": "VIRAL",
-  commons: "COMMONS",
-  pulse: "PULSE",
-  orion: "ORION",
-  space: "SPACE",
-  main: "CORE",
-};
-
 const GLOW_COLORS: Record<string, string> = {
   cyan: "#22d3ee",
   blue: "#3b82f6",
@@ -144,7 +117,6 @@ function MetricCard({ metric }: { metric: HUDMetric }) {
 }
 
 function AgentPill({ agent }: { agent: AgentStatusEntry }) {
-  const zone = AGENT_ZONE_MAP[agent.id] ?? "AGENT";
   const statusColor =
     agent.status === "running"
       ? "bg-emerald-400 shadow-[0_0_4px_#10b98150]"
@@ -158,7 +130,7 @@ function AgentPill({ agent }: { agent: AgentStatusEntry }) {
     <div className="flex items-center gap-1.5 rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 transition-all hover:border-white/[0.1] hover:bg-white/[0.05]">
       <span className={`h-1.5 w-1.5 rounded-full ${statusColor} ${agent.status === "running" ? "hud-pulse" : ""}`} />
       <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/55">
-        {zone}
+        {agent.id.replace(/[-_]/g, " ").toUpperCase().slice(0, 10)}
       </span>
       <span className="font-mono text-[9px] text-white/20">|</span>
       <span className="max-w-[60px] truncate font-mono text-[9px] text-white/40">
@@ -171,56 +143,109 @@ function AgentPill({ agent }: { agent: AgentStatusEntry }) {
   );
 }
 
-function LiveEventStream() {
-  const [events, setEvents] = useState<string[]>([]);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const EVENT_TEMPLATES = [
-    "lead_engine → scraped 24 new leads",
-    "outreach_email → sent 12 emails",
-    "enrichment_bot → enriched 8 profiles",
-    "closer_ai → closed deal €420",
-    "analytics_ai → report generated",
-    "scraper_bot → found 3 new sources",
-    "content_ai → drafted 2 posts",
-    "viral-engine → trend detected",
-    "nova-automation → workflow completed",
-    "predator-drone → monitoring 6 targets",
-    "pulse → heartbeat check passed",
-    "orion → model switched to kimi-k2.6",
-  ];
-
-  useEffect(() => {
-    const addEvent = () => {
-      const template = EVENT_TEMPLATES[Math.floor(Math.random() * EVENT_TEMPLATES.length)];
-      setEvents((prev) => [template, ...prev].slice(0, 5));
-    };
-    addEvent();
-    intervalRef.current = setInterval(addEvent, 3500);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, []);
+function RoomCard({ name, agents, icon }: { name: string; agents: AgentStatusEntry[]; icon: string }) {
+  const onlineCount = agents.filter((a) => a.status === "running" || a.status === "idle").length;
 
   return (
+    <div className="flex min-w-[9rem] flex-col gap-1 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2 backdrop-blur-sm transition-all hover:border-cyan-500/20 hover:bg-white/[0.05]">
+      <div className="flex items-center gap-1.5">
+        <span className="text-sm">{icon}</span>
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-white/70">
+          {name}
+        </span>
+      </div>
+      <div className="font-mono text-[8px] text-white/30">
+        {onlineCount}/{agents.length} active
+      </div>
+    </div>
+  );
+}
+
+function AutopilotToggle({ mode, onToggle }: { mode: "manual" | "autopilot"; onToggle: () => void }) {
+  const isAuto = mode === "autopilot";
+  return (
+    <button
+      onClick={onToggle}
+      className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-[9px] uppercase tracking-widest transition-all ${
+        isAuto
+          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400 shadow-[0_0_12px_#10b98120] hover:border-emerald-400/60"
+          : "border-white/[0.08] bg-white/[0.03] text-white/40 hover:border-white/[0.15] hover:text-white/60"
+      }`}
+    >
+      <span className={`h-2 w-2 rounded-full ${isAuto ? "bg-emerald-400 hud-pulse" : "bg-white/20"}`} />
+      {isAuto ? "AUTOPILOT" : "MANUAL"}
+    </button>
+  );
+}
+
+function LiveEventStream({ events }: { events: { ts: string; agent: string; type: string; message: string }[] }) {
+  return (
     <div className="flex flex-col gap-0.5 overflow-hidden">
-      {events.map((event, i) => (
+      {events.slice(0, 5).map((event, i) => (
         <div
-          key={`${event}-${i}`}
+          key={`${event.ts}-${i}`}
           className="flex items-center gap-1.5 font-mono text-[8px] tracking-wider text-white/30"
-          style={{ opacity: 1 - i * 0.18, animation: "fadeUp 540ms cubic-bezier(0.2,0.74,0.2,1) both" }}
+          style={{ opacity: 1 - i * 0.18 }}
         >
           <span className="text-cyan-400/60">▸</span>
-          {event}
+          <span className="text-white/50">{event.agent}</span>
+          <span className="text-white/20">→</span>
+          <span className="text-white/30 truncate">{event.message}</span>
         </div>
       ))}
+      {events.length === 0 && (
+        <div className="font-mono text-[8px] text-white/15">Waiting for events...</div>
+      )}
+    </div>
+  );
+}
+
+function ServiceDots({ services }: { services: { name: string; status: string }[] }) {
+  const online = services.filter((s) => s.status === "online").length;
+  const total = services.length;
+
+  return (
+    <div className="flex items-center gap-1">
+      <div className="flex gap-0.5">
+        {services.slice(0, 12).map((s, i) => (
+          <span
+            key={i}
+            className={`h-1.5 w-1.5 rounded-full ${s.status === "online" ? "bg-emerald-400/70" : "bg-rose-400/50"}`}
+            title={`${s.name}: ${s.status}`}
+          />
+        ))}
+      </div>
+      <span className="font-mono text-[8px] text-white/25">
+        {online}/{total}
+      </span>
+    </div>
+  );
+}
+
+function ResourceBar({ label, value, color = "cyan" }: { label: string; value: number; color?: string }) {
+  const colorMap: Record<string, string> = {
+    cyan: "bg-cyan-400/70",
+    blue: "bg-blue-400/70",
+    emerald: "bg-emerald-400/70",
+    amber: "bg-amber-400/70",
+    fuchsia: "bg-fuchsia-400/70",
+  };
+  const barColor = colorMap[color] ?? colorMap.cyan;
+  const pct = Math.min(100, Math.max(0, value));
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="w-12 font-mono text-[8px] uppercase tracking-wider text-white/30">{label}</span>
+      <div className="h-1 flex-1 rounded-full bg-white/[0.06]">
+        <div className={`h-full rounded-full ${barColor} transition-all duration-500`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="w-7 text-right font-mono text-[8px] text-white/35">{Math.round(pct)}%</span>
     </div>
   );
 }
 
 function CornerFrame() {
-  const cornerClass =
-    "absolute h-4 w-4 border-cyan-500/30 pointer-events-none";
+  const cornerClass = "absolute h-4 w-4 border-cyan-500/30 pointer-events-none";
 
   return (
     <>
@@ -233,30 +258,75 @@ function CornerFrame() {
 }
 
 export function BusinessHUD({
-  agents = [],
+  agents: propAgents = [],
   totalSpend = 0,
   totalTokens = 0,
   completedRuns = 0,
   successRate = 0,
-  connected = true,
+  connected: propConnected = true,
 }: BusinessHUDProps) {
   const { metrics: ecosystemMetrics } = useEcosystemMetrics();
+  const backend = useClaw3DBackend();
   const [visible, setVisible] = useState(true);
   const [time, setTime] = useState(new Date());
   const spendAnimated = useAnimatedCounter(Math.round(totalSpend * 100));
   const tokensAnimated = useAnimatedCounter(totalTokens);
 
-  const liveMetrics = HUD_METRICS.map((m) => {
-    if (m.label === "SERVICES" && ecosystemMetrics) {
-      return {
-        ...m,
-        value: `${ecosystemMetrics.health.up}/${ecosystemMetrics.health.total}`,
-        delta: `${ecosystemMetrics.health.pct}%`,
-        deltaPositive: ecosystemMetrics.health.pct >= 80,
-      };
-    }
-    return m;
-  });
+  const isBackendConnected = backend.connected;
+  const mode = backend.overview?.mode ?? "manual";
+  const money = backend.overview?.money ?? { revenueToday: 0, leadsToday: 0, outreachSent: 0, responsesReceived: 0, conversionRate: 0, pipelineValue: 0 };
+  const completedToday = backend.overview?.completedToday ?? completedRuns;
+
+  // Merge backend agents with prop agents
+  const mergedAgents: AgentStatusEntry[] = isBackendConnected && backend.agents.length > 0
+    ? backend.agents.map((a) => ({
+        id: a.id,
+        name: a.name,
+        status: (a.status === "online" ? "running" : a.status === "idle" ? "idle" : a.status === "running" ? "running" : "error") as AgentStatusEntry["status"],
+      }))
+    : propAgents;
+
+  // Build room groups from backend agents
+  const roomMap = backend.agents.length > 0
+    ? backend.agents.reduce<Record<string, AgentStatusEntry[]>>((acc, a) => {
+        const room = a.room || "Other";
+        if (!acc[room]) acc[room] = [];
+        acc[room].push({
+          id: a.id,
+          name: a.name,
+          status: (a.status === "online" ? "running" : a.status === "idle" ? "idle" : "error") as AgentStatusEntry["status"],
+        });
+        return acc;
+      }, {})
+    : {};
+
+  const roomIcons: Record<string, string> = {
+    "Mission Control": "🧠",
+    "Dev Lab": "💻",
+    "Lead Engine": "🎯",
+    "Marketing Hub": "📱",
+    "Automation Core": "⚡",
+    "Data Center": "📊",
+  };
+
+  // Dynamic metrics from backend
+  const liveMetrics: HUDMetric[] = isBackendConnected
+    ? [
+        { label: "LEADS", value: String(money.leadsToday), delta: money.leadsToday > 0 ? `+${money.leadsToday}` : undefined, deltaPositive: true, glowColor: "cyan" },
+        { label: "OUTREACH", value: String(money.outreachSent), delta: money.outreachSent > 0 ? `+${money.outreachSent}` : undefined, deltaPositive: true, glowColor: "blue" },
+        { label: "RESPONSES", value: String(money.responsesReceived), delta: money.conversionRate > 0 ? `${(money.conversionRate * 100).toFixed(0)}%` : undefined, deltaPositive: true, glowColor: "emerald" },
+        { label: "CLOSED", value: String(completedToday), delta: completedToday > 0 ? `+${completedToday}` : undefined, deltaPositive: true, glowColor: "amber" },
+        { label: "REVENUE", value: `€${formatCompact(money.revenueToday)}`, delta: money.pipelineValue > 0 ? `€${formatCompact(money.pipelineValue)} pipe` : undefined, deltaPositive: true, glowColor: "fuchsia" },
+        { label: "SERVICES", value: ecosystemMetrics ? `${ecosystemMetrics.health.up}/${ecosystemMetrics.health.total}` : "--", delta: ecosystemMetrics ? `${ecosystemMetrics.health.pct}%` : "loading", deltaPositive: ecosystemMetrics ? ecosystemMetrics.health.pct >= 80 : true, glowColor: "green" },
+      ]
+    : [
+        { label: "LEADS", value: "1,240", delta: "+12%", deltaPositive: true, glowColor: "cyan" },
+        { label: "OUTREACH", value: "3,800", delta: "+8.2%", deltaPositive: true, glowColor: "blue" },
+        { label: "RESPONSES", value: "420", delta: "+23%", deltaPositive: true, glowColor: "emerald" },
+        { label: "CLOSED", value: "37", delta: "+5.4%", deltaPositive: true, glowColor: "amber" },
+        { label: "REVENUE", value: "€8,920", delta: "+18%", deltaPositive: true, glowColor: "fuchsia" },
+        { label: "SERVICES", value: "--", delta: "loading", deltaPositive: true, glowColor: "green" },
+      ];
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -265,8 +335,13 @@ export function BusinessHUD({
 
   const toggleHUD = useCallback(() => setVisible((v) => !v), []);
 
-  const connectionColor = connected ? "bg-emerald-400" : "bg-rose-400";
-  const connectionText = connected ? "ONLINE" : "OFFLINE";
+  const handleAutopilotToggle = useCallback(async () => {
+    const newMode = mode === "manual" ? "autopilot" : "manual";
+    await backend.sendCommand(newMode);
+  }, [mode, backend]);
+
+  const connectionColor = (propConnected || isBackendConnected) ? "bg-emerald-400" : "bg-rose-400";
+  const connectionText = (propConnected || isBackendConnected) ? "ONLINE" : "OFFLINE";
 
   const timeStr = time.toLocaleTimeString("en-GB", {
     hour: "2-digit",
@@ -287,7 +362,7 @@ export function BusinessHUD({
         className="pointer-events-auto fixed left-3 top-3 z-[60] rounded border border-cyan-500/20 bg-black/80 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.24em] text-cyan-400/50 shadow-[0_0_12px_#22d3ee15] backdrop-blur-md transition-all hover:border-cyan-400/40 hover:text-cyan-300/80 hover:shadow-[0_0_16px_#22d3ee25]"
         aria-label={visible ? "Hide business HUD" : "Show business HUD"}
       >
-        {visible ? "⬡ HUD" : "⬡ HUD"}
+        ⬡ HUD
       </button>
 
       {visible ? (
@@ -297,19 +372,25 @@ export function BusinessHUD({
 
           {/* Top strip - metrics + branding */}
           <div className="pointer-events-auto flex items-start gap-2">
-            <div className="relative flex min-w-0 flex-1 gap-1 overflow-hidden rounded-xl border border-cyan-500/[0.08] bg-black/60 p-2 backdrop-blur-xl hud-border-glow">
+            <div className="relative flex min-w-0 flex-1 flex-col gap-1.5 rounded-xl border border-cyan-500/[0.08] bg-black/60 p-2 backdrop-blur-xl hud-border-glow">
               <CornerFrame />
               {/* NovaMaster branding */}
-              <div className="mr-2 flex flex-col justify-center border-r border-cyan-500/10 pr-3">
-                <div className="font-mono text-[11px] font-bold uppercase tracking-[0.32em] text-cyan-400/70 hud-glow-text hud-flicker">
-                  NOVA
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 border-r border-cyan-500/10 pr-3">
+                  <div className="flex flex-col justify-center">
+                    <div className="font-mono text-[11px] font-bold uppercase tracking-[0.32em] text-cyan-400/70 hud-glow-text hud-flicker">
+                      NOVA
+                    </div>
+                    <div className="font-mono text-[7px] uppercase tracking-[0.4em] text-cyan-600/40">
+                      MASTER
+                    </div>
+                    <div className="mt-0.5 font-mono text-[7px] text-white/20">
+                      {dateStr}
+                    </div>
+                  </div>
+                  <AutopilotToggle mode={mode} onToggle={handleAutopilotToggle} />
                 </div>
-                <div className="font-mono text-[7px] uppercase tracking-[0.4em] text-cyan-600/40">
-                  MASTER
-                </div>
-                <div className="mt-1 font-mono text-[7px] text-white/20">
-                  {dateStr}
-                </div>
+                <ServiceDots services={backend.services.length > 0 ? backend.services : []} />
               </div>
               {liveMetrics.map((metric) => (
                 <MetricCard key={metric.label} metric={metric} />
@@ -317,20 +398,36 @@ export function BusinessHUD({
             </div>
           </div>
 
-          {/* Bottom strip - agents + events */}
+          {/* Middle strip - rooms */}
+          {Object.keys(roomMap).length > 0 && (
+            <div className="pointer-events-auto flex items-center gap-2">
+              <div className="flex gap-2 overflow-x-auto rounded-xl border border-cyan-500/[0.08] bg-black/60 p-2 backdrop-blur-xl hud-border-glow" style={{ scrollbarWidth: "none" }}>
+                {Object.entries(roomMap).map(([roomName, roomAgents]) => (
+                  <RoomCard
+                    key={roomName}
+                    name={roomName}
+                    agents={roomAgents}
+                    icon={roomIcons[roomName] ?? "🏠"}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Bottom strip - agents + events + resources */}
           <div className="pointer-events-auto flex items-end gap-2">
             {/* Agent swarm */}
             <div className="relative flex min-w-0 flex-1 flex-col gap-1.5 rounded-xl border border-cyan-500/[0.08] bg-black/60 p-2 backdrop-blur-xl hud-border-glow">
               <CornerFrame />
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className={`h-2 w-2 rounded-full ${connectionColor} shadow-[0_0_6px] ${connected ? "shadow-emerald-500/50" : "shadow-rose-500/50"}`} />
+                  <span className={`h-2 w-2 rounded-full ${connectionColor} shadow-[0_0_6px] ${connectionColor.includes("emerald") ? "shadow-emerald-500/50" : "shadow-rose-500/50"}`} />
                   <span className="font-mono text-[9px] uppercase tracking-[0.24em] text-white/45">
                     {connectionText}
                   </span>
                   <span className="font-mono text-[9px] text-white/15">|</span>
                   <span className="font-mono text-[9px] text-white/25">
-                    {agents.length || Object.keys(AGENT_ZONE_MAP).length} AGENTS
+                    {mergedAgents.length} AGENTS
                   </span>
                 </div>
                 <div className="font-mono text-[10px] tabular-nums tracking-wider text-cyan-400/30 hud-glow-text">
@@ -338,34 +435,42 @@ export function BusinessHUD({
                 </div>
               </div>
 
-              {agents.length > 0 ? (
-                <div className="flex flex-wrap gap-1">
-                  {agents.slice(0, 12).map((agent) => (
-                    <AgentPill key={agent.id} agent={agent} />
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-1">
-                  {Object.entries(AGENT_ZONE_MAP).slice(0, 12).map(([id, zone]) => (
-                    <AgentPill
-                      key={id}
-                      agent={{ id, name: zone, status: id === "main" ? "running" : "idle" }}
-                    />
-                  ))}
-                </div>
-              )}
+              <div className="flex flex-wrap gap-1">
+                {mergedAgents.slice(0, 12).map((agent) => (
+                  <AgentPill key={agent.id} agent={agent} />
+                ))}
+              </div>
 
               <div className="mt-1 border-t border-cyan-500/[0.06] pt-1">
                 <div className="flex items-center justify-between font-mono text-[8px] tracking-wider text-white/20">
                   <span>SPEND €{formatCompact(spendAnimated / 100)}</span>
                   <span>TOKENS {formatCompact(tokensAnimated)}</span>
-                  <span>RUNS {formatCompact(completedRuns)}</span>
+                  <span>RUNS {formatCompact(completedToday)}</span>
                   <span>
                     SUCCESS {successRate > 0 ? `${Math.round(successRate * 100)}%` : "—"}
                   </span>
                 </div>
               </div>
             </div>
+
+            {/* Resource monitor */}
+            {backend.resources && (
+              <div className="relative w-40 rounded-xl border border-cyan-500/[0.08] bg-black/60 p-2 backdrop-blur-xl hud-border-glow">
+                <CornerFrame />
+                <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.24em] text-cyan-400/35">
+                  <span className="hud-pulse h-1.5 w-1.5 rounded-full bg-cyan-400/60" />
+                  RESOURCES
+                </div>
+                <div className="mt-1.5 flex flex-col gap-1">
+                  <ResourceBar label="CPU" value={backend.resources.cpu} color="cyan" />
+                  <ResourceBar label="RAM" value={backend.resources.memory} color="blue" />
+                  <ResourceBar label="DISK" value={backend.resources.storage} color="emerald" />
+                  {backend.resources.gpu !== null && (
+                    <ResourceBar label="GPU" value={backend.resources.gpu} color="fuchsia" />
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Live event stream */}
             <div className="relative w-52 rounded-xl border border-cyan-500/[0.08] bg-black/60 p-2 backdrop-blur-xl hud-border-glow">
@@ -375,7 +480,7 @@ export function BusinessHUD({
                 LIVE FEED
               </div>
               <div className="mt-1.5">
-                <LiveEventStream />
+                <LiveEventStream events={backend.events.length > 0 ? backend.events : []} />
               </div>
             </div>
           </div>
