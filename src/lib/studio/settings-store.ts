@@ -176,6 +176,27 @@ export const loadStudioSettings = (): StudioSettings => {
   const raw = fs.readFileSync(settingsPath, "utf8");
   const parsed = JSON.parse(raw) as unknown;
   const settings = normalizeStudioSettings(parsed);
+
+  // For openclaw/local adapter types, always prefer the token from openclaw.json
+  // since it's the authoritative source for the gateway auth token.
+  // This prevents stale/wrong tokens from settings.json from blocking connections.
+  const adapterType = settings.gateway?.adapterType ?? "openclaw";
+  if (adapterType === "openclaw" || adapterType === "local") {
+    const gateway = loadLocalGatewayDefaults();
+    if (gateway) {
+      return {
+        ...settings,
+        gateway: settings.gateway?.url?.trim()
+          ? {
+              ...settings.gateway,
+              url: settings.gateway.url.trim(),
+              token: gateway.token,
+            }
+          : gateway,
+      };
+    }
+  }
+
   if (!settings.gateway?.token) {
     const gateway = loadLocalGatewayDefaults();
     if (gateway) {

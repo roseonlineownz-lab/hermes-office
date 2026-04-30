@@ -92,7 +92,10 @@ const loadUpstreamGatewaySettings = (env = process.env) => {
     typeof gateway?.adapterType === "string" && gateway.adapterType.trim()
       ? gateway.adapterType.trim()
       : "openclaw";
-  if (!token && adapterType === "openclaw") {
+
+  // For openclaw/local profiles, always prefer the token from openclaw.json
+  // This is the source of truth for gateway auth
+  if (adapterType === "openclaw" || adapterType === "local") {
     const defaults = readOpenclawGatewayDefaults(env);
     if (defaults) {
       return {
@@ -103,6 +106,19 @@ const loadUpstreamGatewaySettings = (env = process.env) => {
       };
     }
   }
+
+  if (!token) {
+    const defaults = readOpenclawGatewayDefaults(env);
+    if (defaults) {
+      return {
+        url: url || defaults.url,
+        token: defaults.token,
+        adapterType,
+        settingsPath,
+      };
+    }
+  }
+
   return {
     url: url || DEFAULT_GATEWAY_URL,
     token,
