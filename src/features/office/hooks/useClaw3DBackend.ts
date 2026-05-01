@@ -9,17 +9,43 @@ export type BackendAgent = {
   name: string;
   role: string;
   room: string;
-  status: "online" | "idle" | "running" | "offline";
+  status: "online" | "idle" | "running" | "offline" | "error";
   model: string;
   icon: string;
+  cluster?: string;
+  rank?: string;
+  tasksCompleted?: number;
+  profitImpact?: number;
+  statusColor?: string;
+};
+
+export type BackendCluster = {
+  id: string;
+  name: string;
+  color: string;
+  agents: BackendAgent[];
+  onlineCount: number;
+  totalTasks: number;
+};
+
+export type BackendSuggestion = {
+  id: string;
+  priority: "high" | "medium" | "low";
+  type: string;
+  title: string;
+  description: string;
+  actions: string[];
+  agent: string;
+  profitImpact: number;
 };
 
 export type BackendTask = {
   id: number;
   title: string;
-  time: string;
   status: string;
   agent: string;
+  cluster?: string;
+  priority?: string;
 };
 
 export type BackendEvent = {
@@ -34,6 +60,7 @@ export type BackendOverview = {
   onlineAgents: number;
   activeTasks: number;
   completedToday: number;
+  totalClusters: number;
   systemStatus: string;
   mode: "manual" | "autopilot";
   money: {
@@ -43,6 +70,13 @@ export type BackendOverview = {
     responsesReceived: number;
     conversionRate: number;
     pipelineValue: number;
+    errorsActive: number;
+    slaUptime: number;
+  };
+  trends?: {
+    revenueDelta: number;
+    leadsDelta: number;
+    uptime: number;
   };
 };
 
@@ -51,14 +85,38 @@ export type BackendService = {
   url: string;
   status: "online" | "offline";
   code: number | null;
+  critical: boolean;
 };
 
 export type BackendResources = {
   cpu: number;
   memory: number;
+  memoryUsed: number;
+  memoryTotal: number;
   storage: number;
-  network: number;
-  gpu: number | null;
+  gpu: {
+    utilization: number;
+    memoryUtil: number;
+    temperature: number;
+    memoryUsed: number;
+    memoryTotal: number;
+    powerDraw: number;
+    available: boolean;
+  } | null;
+};
+
+export type BackendGlobalStatus = {
+  revenue: number;
+  leads: number;
+  errors: number;
+  slaUptime: number;
+  topAction: string;
+  mode: string;
+  agentsOnline: number;
+  agentsTotal: number;
+  cpu: number;
+  memory: number;
+  gpuTemp: number | null;
 };
 
 export type BackendWSMessage = {
@@ -68,19 +126,25 @@ export type BackendWSMessage = {
   resources: BackendResources;
   overview: BackendOverview;
   agents: BackendAgent[];
+  clusters: BackendCluster[];
   tasks: BackendTask[];
   events: BackendEvent[];
+  suggestions: BackendSuggestion[];
   money: BackendOverview["money"];
+  globalStatus: BackendGlobalStatus;
 };
 
 export type Claw3DBackendState = {
   connected: boolean;
   overview: BackendOverview | null;
   agents: BackendAgent[];
+  clusters: BackendCluster[];
   tasks: BackendTask[];
   events: BackendEvent[];
   services: BackendService[];
   resources: BackendResources | null;
+  suggestions: BackendSuggestion[];
+  globalStatus: BackendGlobalStatus | null;
   sendCommand: (command: string, agent?: string) => Promise<{ ok: boolean; action?: string }>;
 };
 
@@ -88,10 +152,13 @@ export function useClaw3DBackend(): Claw3DBackendState {
   const [connected, setConnected] = useState(false);
   const [overview, setOverview] = useState<BackendOverview | null>(null);
   const [agents, setAgents] = useState<BackendAgent[]>([]);
+  const [clusters, setClusters] = useState<BackendCluster[]>([]);
   const [tasks, setTasks] = useState<BackendTask[]>([]);
   const [events, setEvents] = useState<BackendEvent[]>([]);
   const [services, setServices] = useState<BackendService[]>([]);
   const [resources, setResources] = useState<BackendResources | null>(null);
+  const [suggestions, setSuggestions] = useState<BackendSuggestion[]>([]);
+  const [globalStatus, setGlobalStatus] = useState<BackendGlobalStatus | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -110,9 +177,12 @@ export function useClaw3DBackend(): Claw3DBackendState {
           const data: BackendWSMessage = JSON.parse(event.data);
           if (data.overview) setOverview(data.overview);
           if (data.agents) setAgents(data.agents);
+          if (data.clusters) setClusters(data.clusters);
           if (data.tasks) setTasks(data.tasks);
           if (data.events) setEvents(data.events);
           if (data.resources) setResources(data.resources);
+          if (data.suggestions) setSuggestions(data.suggestions);
+          if (data.globalStatus) setGlobalStatus(data.globalStatus);
         } catch {
           // ignore parse errors
         }
@@ -134,25 +204,30 @@ export function useClaw3DBackend(): Claw3DBackendState {
     }
   }, []);
 
-  // Initial REST fetch + WebSocket
   useEffect(() => {
     const fetchInitial = async () => {
       try {
-        const [overviewRes, agentsRes, tasksRes, eventsRes, servicesRes, resourcesRes] = await Promise.all([
+        const [overviewRes, agentsRes, clustersRes, tasksRes, eventsRes, servicesRes, resourcesRes, suggestionsRes, globalStatusRes] = await Promise.all([
           fetch(`${BACKEND_URL}/api/overview`, { signal: AbortSignal.timeout(5000) }),
           fetch(`${BACKEND_URL}/api/agents`, { signal: AbortSignal.timeout(5000) }),
+          fetch(`${BACKEND_URL}/api/clusters`, { signal: AbortSignal.timeout(5000) }),
           fetch(`${BACKEND_URL}/api/tasks`, { signal: AbortSignal.timeout(5000) }),
           fetch(`${BACKEND_URL}/api/events`, { signal: AbortSignal.timeout(5000) }),
           fetch(`${BACKEND_URL}/api/services`, { signal: AbortSignal.timeout(5000) }),
           fetch(`${BACKEND_URL}/api/resources`, { signal: AbortSignal.timeout(5000) }),
+          fetch(`${BACKEND_URL}/api/suggestions`, { signal: AbortSignal.timeout(5000) }),
+          fetch(`${BACKEND_URL}/api/global-status`, { signal: AbortSignal.timeout(5000) }),
         ]);
 
         if (overviewRes.ok) setOverview(await overviewRes.json());
         if (agentsRes.ok) { const d = await agentsRes.json(); setAgents(d.agents ?? []); }
+        if (clustersRes.ok) { const d = await clustersRes.json(); setClusters(d.clusters ?? []); }
         if (tasksRes.ok) { const d = await tasksRes.json(); setTasks(d.tasks ?? []); }
         if (eventsRes.ok) { const d = await eventsRes.json(); setEvents(d.events ?? []); }
         if (servicesRes.ok) { const d = await servicesRes.json(); setServices(d.services ?? []); }
         if (resourcesRes.ok) setResources(await resourcesRes.json());
+        if (suggestionsRes.ok) { const d = await suggestionsRes.json(); setSuggestions(d.suggestions ?? []); }
+        if (globalStatusRes.ok) setGlobalStatus(await globalStatusRes.json());
 
         setConnected(true);
       } catch {
@@ -169,7 +244,7 @@ export function useClaw3DBackend(): Claw3DBackendState {
     };
   }, [connectWS]);
 
-  const sendCommand = useCallback(async (command: string, agent = "hermes") => {
+  const sendCommand = useCallback(async (command: string, agent = "nova-commander") => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/command`, {
         method: "POST",
@@ -184,5 +259,5 @@ export function useClaw3DBackend(): Claw3DBackendState {
     }
   }, []);
 
-  return { connected, overview, agents, tasks, events, services, resources, sendCommand };
+  return { connected, overview, agents, clusters, tasks, events, services, resources, suggestions, globalStatus, sendCommand };
 }

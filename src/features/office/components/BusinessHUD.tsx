@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useEcosystemMetrics } from "@/features/office/hooks/useEcosystemMetrics";
-import { useClaw3DBackend } from "@/features/office/hooks/useClaw3DBackend";
+import { useClaw3DBackend, type BackendAgent, type BackendSuggestion, type BackendCluster } from "@/features/office/hooks/useClaw3DBackend";
 
 type HUDMetric = {
   label: string;
@@ -18,6 +18,12 @@ type AgentStatusEntry = {
   status: "running" | "idle" | "error" | "connecting";
   runs?: number;
   lastAction?: string;
+  rank?: string;
+  tasksCompleted?: number;
+  profitImpact?: number;
+  model?: string;
+  cluster?: string;
+  icon?: string;
 };
 
 type BusinessHUDProps = {
@@ -116,7 +122,7 @@ function MetricCard({ metric }: { metric: HUDMetric }) {
   );
 }
 
-function AgentPill({ agent }: { agent: AgentStatusEntry }) {
+function AgentNode({ agent }: { agent: AgentStatusEntry }) {
   const statusColor =
     agent.status === "running"
       ? "bg-emerald-400 shadow-[0_0_4px_#10b98150]"
@@ -126,37 +132,115 @@ function AgentPill({ agent }: { agent: AgentStatusEntry }) {
           ? "bg-amber-400 shadow-[0_0_4px_#f59e0b50]"
           : "bg-white/25";
 
+  const borderColor =
+    agent.status === "running"
+      ? "border-emerald-500/30 hover:border-emerald-400/50"
+      : agent.status === "error"
+        ? "border-rose-500/30"
+        : "border-white/[0.06] hover:border-white/[0.12]";
+
+  const profitStr = agent.profitImpact !== undefined
+    ? agent.profitImpact > 0 ? `+€${agent.profitImpact}` : agent.profitImpact < 0 ? `€${agent.profitImpact}` : "€0"
+    : null;
+
   return (
-    <div className="flex items-center gap-1.5 rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 transition-all hover:border-white/[0.1] hover:bg-white/[0.05]">
-      <span className={`h-1.5 w-1.5 rounded-full ${statusColor} ${agent.status === "running" ? "hud-pulse" : ""}`} />
-      <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/55">
-        {agent.id.replace(/[-_]/g, " ").toUpperCase().slice(0, 10)}
-      </span>
-      <span className="font-mono text-[9px] text-white/20">|</span>
-      <span className="max-w-[60px] truncate font-mono text-[9px] text-white/40">
-        {agent.name}
-      </span>
-      {agent.runs !== undefined ? (
-        <span className="font-mono text-[8px] text-white/20">{agent.runs}r</span>
-      ) : null}
+    <div
+      className={`flex flex-col gap-0.5 rounded-md border ${borderColor} bg-white/[0.03] px-2 py-1.5 backdrop-blur-sm transition-all hover:bg-white/[0.06]`}
+    >
+      <div className="flex items-center gap-1.5">
+        <span className={`h-1.5 w-1.5 rounded-full ${statusColor} ${agent.status === "running" ? "hud-pulse" : ""}`} />
+        <span className="font-mono text-[10px] font-semibold text-white/70">
+          {agent.icon} {agent.name}
+        </span>
+      </div>
+      {agent.rank && (
+        <div className="font-mono text-[8px] uppercase tracking-wider text-cyan-400/40">
+          {agent.rank}
+        </div>
+      )}
+      <div className="flex items-center gap-2 font-mono text-[8px] text-white/30">
+        {agent.tasksCompleted !== undefined && (
+          <span>{agent.tasksCompleted} tasks</span>
+        )}
+        {profitStr && (
+          <span className={agent.profitImpact! > 0 ? "text-amber-400/50" : "text-white/20"}>
+            {profitStr}
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-1">
+        <span className={`h-1 w-1 rounded-full ${statusColor}`} />
+        <span className="font-mono text-[7px] uppercase tracking-wider text-white/25">
+          {agent.status}
+        </span>
+      </div>
     </div>
   );
 }
 
-function RoomCard({ name, agents, icon }: { name: string; agents: AgentStatusEntry[]; icon: string }) {
-  const onlineCount = agents.filter((a) => a.status === "running" || a.status === "idle").length;
+function ClusterCard({ cluster }: { cluster: BackendCluster }) {
+  const onlineCount = cluster.onlineCount;
+  const totalAgents = cluster.agents.length;
 
   return (
-    <div className="flex min-w-[9rem] flex-col gap-1 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2 backdrop-blur-sm transition-all hover:border-cyan-500/20 hover:bg-white/[0.05]">
-      <div className="flex items-center gap-1.5">
-        <span className="text-sm">{icon}</span>
-        <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-white/70">
-          {name}
+    <div className="flex min-w-[10rem] flex-col gap-1.5 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2 backdrop-blur-sm transition-all hover:bg-white/[0.05]" style={{ borderColor: `${cluster.color}20` }}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: cluster.color, boxShadow: `0 0 6px ${cluster.color}40` }} />
+          <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-white/70">
+            {cluster.name}
+          </span>
+        </div>
+        <span className="font-mono text-[8px] text-white/25">
+          {onlineCount}/{totalAgents}
         </span>
       </div>
-      <div className="font-mono text-[8px] text-white/30">
-        {onlineCount}/{agents.length} active
+      <div className="flex gap-1">
+        {cluster.agents.slice(0, 6).map((a) => (
+          <span
+            key={a.id}
+            className={`h-1.5 w-1.5 rounded-full ${a.status === "online" || a.status === "running" ? "" : "opacity-40"}`}
+            style={{ backgroundColor: a.status === "online" || a.status === "running" ? cluster.color : "#6b7280" }}
+            title={`${a.name}: ${a.status}`}
+          />
+        ))}
       </div>
+      <div className="font-mono text-[8px] text-white/20">
+        {cluster.totalTasks} tasks completed
+      </div>
+    </div>
+  );
+}
+
+function SuggestionCard({ suggestion, onAction }: { suggestion: BackendSuggestion; onAction: (action: string) => void }) {
+  const priorityColor = suggestion.priority === "high" ? "border-rose-500/30 bg-rose-500/[0.03]" : suggestion.priority === "medium" ? "border-amber-500/30 bg-amber-500/[0.03]" : "border-white/[0.06] bg-white/[0.02]";
+  const priorityBadge = suggestion.priority === "high" ? "bg-rose-500/20 text-rose-400" : suggestion.priority === "medium" ? "bg-amber-500/20 text-amber-400" : "bg-white/10 text-white/40";
+
+  return (
+    <div className={`flex flex-col gap-1 rounded-md border ${priorityColor} px-2 py-1.5 backdrop-blur-sm`}>
+      <div className="flex items-center justify-between">
+        <span className="font-mono text-[9px] font-semibold text-white/60">{suggestion.title}</span>
+        <span className={`rounded px-1 py-0.5 font-mono text-[7px] uppercase ${priorityBadge}`}>
+          {suggestion.priority}
+        </span>
+      </div>
+      <div className="font-mono text-[8px] text-white/25">{suggestion.description}</div>
+      <div className="mt-0.5 flex flex-wrap gap-1">
+        {suggestion.actions.map((action, i) => (
+          <button
+            key={i}
+            onClick={() => onAction(action)}
+            className="rounded border border-white/[0.08] bg-white/[0.03] px-1.5 py-0.5 font-mono text-[7px] text-white/40 transition-all hover:border-cyan-500/30 hover:bg-cyan-500/[0.06] hover:text-cyan-400/70"
+          >
+            {action}
+          </button>
+        ))}
+      </div>
+      {suggestion.profitImpact !== 0 && (
+        <div className="font-mono text-[7px] text-white/15">
+          Impact: {suggestion.profitImpact > 0 ? "+" : ""}€{suggestion.profitImpact}
+        </div>
+      )}
     </div>
   );
 }
@@ -187,10 +271,10 @@ function LiveEventStream({ events }: { events: { ts: string; agent: string; type
           className="flex items-center gap-1.5 font-mono text-[8px] tracking-wider text-white/30"
           style={{ opacity: 1 - i * 0.18 }}
         >
-          <span className="text-cyan-400/60">▸</span>
+          <span className={`${event.type === "error" ? "text-rose-400/60" : "text-cyan-400/60"}`}>▸</span>
           <span className="text-white/50">{event.agent}</span>
           <span className="text-white/20">→</span>
-          <span className="text-white/30 truncate">{event.message}</span>
+          <span className="max-w-[120px] truncate text-white/30">{event.message}</span>
         </div>
       ))}
       {events.length === 0 && (
@@ -200,18 +284,18 @@ function LiveEventStream({ events }: { events: { ts: string; agent: string; type
   );
 }
 
-function ServiceDots({ services }: { services: { name: string; status: string }[] }) {
+function ServiceDots({ services }: { services: { name: string; status: string; critical?: boolean }[] }) {
   const online = services.filter((s) => s.status === "online").length;
   const total = services.length;
 
   return (
     <div className="flex items-center gap-1">
       <div className="flex gap-0.5">
-        {services.slice(0, 12).map((s, i) => (
+        {services.slice(0, 14).map((s, i) => (
           <span
             key={i}
-            className={`h-1.5 w-1.5 rounded-full ${s.status === "online" ? "bg-emerald-400/70" : "bg-rose-400/50"}`}
-            title={`${s.name}: ${s.status}`}
+            className={`h-1.5 w-1.5 rounded-full ${s.status === "online" ? "bg-emerald-400/70" : s.critical ? "bg-rose-400/70" : "bg-rose-400/40"}`}
+            title={`${s.name}: ${s.status}${s.critical ? " (critical)" : ""}`}
           />
         ))}
       </div>
@@ -232,14 +316,15 @@ function ResourceBar({ label, value, color = "cyan" }: { label: string; value: n
   };
   const barColor = colorMap[color] ?? colorMap.cyan;
   const pct = Math.min(100, Math.max(0, value));
+  const isWarning = pct > 85;
 
   return (
     <div className="flex items-center gap-1.5">
       <span className="w-12 font-mono text-[8px] uppercase tracking-wider text-white/30">{label}</span>
       <div className="h-1 flex-1 rounded-full bg-white/[0.06]">
-        <div className={`h-full rounded-full ${barColor} transition-all duration-500`} style={{ width: `${pct}%` }} />
+        <div className={`h-full rounded-full ${isWarning ? "bg-rose-400/70" : barColor} transition-all duration-500`} style={{ width: `${pct}%` }} />
       </div>
-      <span className="w-7 text-right font-mono text-[8px] text-white/35">{Math.round(pct)}%</span>
+      <span className={`w-7 text-right font-mono text-[8px] ${isWarning ? "text-rose-400/60" : "text-white/35"}`}>{Math.round(pct)}%</span>
     </div>
   );
 }
@@ -257,6 +342,41 @@ function CornerFrame() {
   );
 }
 
+function GlobalStatusBar({ globalStatus }: { globalStatus: { revenue: number; leads: number; errors: number; topAction: string; slaUptime: number } | null }) {
+  if (!globalStatus) return null;
+  const hasErrors = globalStatus.errors > 0;
+  const revenueStr = globalStatus.revenue > 0 ? `€${formatCompact(globalStatus.revenue)}` : "€0";
+
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-black/80 px-3 py-1.5 backdrop-blur-xl">
+      <div className="flex items-center gap-1.5">
+        <span className="font-mono text-[8px] uppercase tracking-wider text-white/25">REV</span>
+        <span className="font-mono text-[12px] font-bold text-amber-400/80">{revenueStr}</span>
+      </div>
+      <div className="h-3 w-px bg-white/10" />
+      <div className="flex items-center gap-1.5">
+        <span className="font-mono text-[8px] uppercase tracking-wider text-white/25">LEADS</span>
+        <span className="font-mono text-[12px] font-bold text-cyan-400/80">{globalStatus.leads}</span>
+      </div>
+      <div className="h-3 w-px bg-white/10" />
+      <div className="flex items-center gap-1.5">
+        <span className="font-mono text-[8px] uppercase tracking-wider text-white/25">ERRORS</span>
+        <span className={`font-mono text-[12px] font-bold ${hasErrors ? "text-rose-400/80" : "text-white/20"}`}>{globalStatus.errors}</span>
+      </div>
+      <div className="h-3 w-px bg-white/10" />
+      <div className="flex items-center gap-1.5">
+        <span className="font-mono text-[8px] uppercase tracking-wider text-white/25">SLA</span>
+        <span className="font-mono text-[12px] font-bold text-emerald-400/80">{globalStatus.slaUptime}%</span>
+      </div>
+      <div className="h-3 w-px bg-white/10" />
+      <div className="flex items-center gap-1.5">
+        <span className={`h-1.5 w-1.5 rounded-full ${hasErrors ? "bg-rose-400 hud-pulse" : "bg-emerald-400/50"}`} />
+        <span className="max-w-[200px] truncate font-mono text-[9px] text-white/40">{globalStatus.topAction}</span>
+      </div>
+    </div>
+  );
+}
+
 export function BusinessHUD({
   agents: propAgents = [],
   totalSpend = 0,
@@ -270,44 +390,26 @@ export function BusinessHUD({
   const [visible, setVisible] = useState(true);
   const [time, setTime] = useState(new Date());
   const spendAnimated = useAnimatedCounter(Math.round(totalSpend * 100));
-  const tokensAnimated = useAnimatedCounter(totalTokens);
 
   const isBackendConnected = backend.connected;
   const mode = backend.overview?.mode ?? "manual";
-  const money = backend.overview?.money ?? { revenueToday: 0, leadsToday: 0, outreachSent: 0, responsesReceived: 0, conversionRate: 0, pipelineValue: 0 };
+  const money = backend.overview?.money ?? { revenueToday: 0, leadsToday: 0, outreachSent: 0, responsesReceived: 0, conversionRate: 0, pipelineValue: 0, errorsActive: 0, slaUptime: 99.7 };
   const completedToday = backend.overview?.completedToday ?? completedRuns;
 
-  // Merge backend agents with prop agents
+  // Merge backend agents with detail
   const mergedAgents: AgentStatusEntry[] = isBackendConnected && backend.agents.length > 0
     ? backend.agents.map((a) => ({
         id: a.id,
         name: a.name,
         status: (a.status === "online" ? "running" : a.status === "idle" ? "idle" : a.status === "running" ? "running" : "error") as AgentStatusEntry["status"],
+        rank: a.rank,
+        tasksCompleted: a.tasksCompleted,
+        profitImpact: a.profitImpact,
+        model: a.model,
+        cluster: a.cluster,
+        icon: a.icon,
       }))
     : propAgents;
-
-  // Build room groups from backend agents
-  const roomMap = backend.agents.length > 0
-    ? backend.agents.reduce<Record<string, AgentStatusEntry[]>>((acc, a) => {
-        const room = a.room || "Other";
-        if (!acc[room]) acc[room] = [];
-        acc[room].push({
-          id: a.id,
-          name: a.name,
-          status: (a.status === "online" ? "running" : a.status === "idle" ? "idle" : "error") as AgentStatusEntry["status"],
-        });
-        return acc;
-      }, {})
-    : {};
-
-  const roomIcons: Record<string, string> = {
-    "Mission Control": "🧠",
-    "Dev Lab": "💻",
-    "Lead Engine": "🎯",
-    "Marketing Hub": "📱",
-    "Automation Core": "⚡",
-    "Data Center": "📊",
-  };
 
   // Dynamic metrics from backend
   const liveMetrics: HUDMetric[] = isBackendConnected
@@ -317,7 +419,7 @@ export function BusinessHUD({
         { label: "RESPONSES", value: String(money.responsesReceived), delta: money.conversionRate > 0 ? `${(money.conversionRate * 100).toFixed(0)}%` : undefined, deltaPositive: true, glowColor: "emerald" },
         { label: "CLOSED", value: String(completedToday), delta: completedToday > 0 ? `+${completedToday}` : undefined, deltaPositive: true, glowColor: "amber" },
         { label: "REVENUE", value: `€${formatCompact(money.revenueToday)}`, delta: money.pipelineValue > 0 ? `€${formatCompact(money.pipelineValue)} pipe` : undefined, deltaPositive: true, glowColor: "fuchsia" },
-        { label: "SERVICES", value: ecosystemMetrics ? `${ecosystemMetrics.health.up}/${ecosystemMetrics.health.total}` : "--", delta: ecosystemMetrics ? `${ecosystemMetrics.health.pct}%` : "loading", deltaPositive: ecosystemMetrics ? ecosystemMetrics.health.pct >= 80 : true, glowColor: "green" },
+        { label: "SLA", value: `${money.slaUptime}%`, delta: money.errorsActive > 0 ? `${money.errorsActive} issues` : undefined, deltaPositive: money.errorsActive === 0, glowColor: money.errorsActive > 0 ? "red" : "green" },
       ]
     : [
         { label: "LEADS", value: "1,240", delta: "+12%", deltaPositive: true, glowColor: "cyan" },
@@ -325,7 +427,7 @@ export function BusinessHUD({
         { label: "RESPONSES", value: "420", delta: "+23%", deltaPositive: true, glowColor: "emerald" },
         { label: "CLOSED", value: "37", delta: "+5.4%", deltaPositive: true, glowColor: "amber" },
         { label: "REVENUE", value: "€8,920", delta: "+18%", deltaPositive: true, glowColor: "fuchsia" },
-        { label: "SERVICES", value: "--", delta: "loading", deltaPositive: true, glowColor: "green" },
+        { label: "SLA", value: "99.7%", glowColor: "green" },
       ];
 
   useEffect(() => {
@@ -340,23 +442,20 @@ export function BusinessHUD({
     await backend.sendCommand(newMode);
   }, [mode, backend]);
 
+  const handleSuggestionAction = useCallback(async (action: string) => {
+    await backend.sendCommand(action);
+  }, [backend]);
+
   const connectionColor = (propConnected || isBackendConnected) ? "bg-emerald-400" : "bg-rose-400";
   const connectionText = (propConnected || isBackendConnected) ? "ONLINE" : "OFFLINE";
 
-  const timeStr = time.toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-  const dateStr = time.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  const timeStr = time.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const dateStr = time.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+
+  const gpuInfo = backend.resources?.gpu;
 
   return (
     <>
-      {/* Toggle button */}
       <button
         onClick={toggleHUD}
         className="pointer-events-auto fixed left-3 top-3 z-[60] rounded border border-cyan-500/20 bg-black/80 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.24em] text-cyan-400/50 shadow-[0_0_12px_#22d3ee15] backdrop-blur-md transition-all hover:border-cyan-400/40 hover:text-cyan-300/80 hover:shadow-[0_0_16px_#22d3ee25]"
@@ -367,14 +466,15 @@ export function BusinessHUD({
 
       {visible ? (
         <div className="pointer-events-none fixed inset-0 z-[55] flex flex-col justify-between p-2.5">
-          {/* Scanline overlay */}
           <div className="hud-scanline pointer-events-none absolute inset-0 z-[56]" />
 
-          {/* Top strip - metrics + branding */}
-          <div className="pointer-events-auto flex items-start gap-2">
+          {/* TOP: Global status bar */}
+          <div className="pointer-events-auto flex flex-col gap-2">
+            <GlobalStatusBar globalStatus={backend.globalStatus} />
+
+            {/* Metrics + branding */}
             <div className="relative flex min-w-0 flex-1 flex-col gap-1.5 rounded-xl border border-cyan-500/[0.08] bg-black/60 p-2 backdrop-blur-xl hud-border-glow">
               <CornerFrame />
-              {/* NovaMaster branding */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 border-r border-cyan-500/10 pr-3">
                   <div className="flex flex-col justify-center">
@@ -392,31 +492,45 @@ export function BusinessHUD({
                 </div>
                 <ServiceDots services={backend.services.length > 0 ? backend.services : []} />
               </div>
-              {liveMetrics.map((metric) => (
-                <MetricCard key={metric.label} metric={metric} />
-              ))}
-            </div>
-          </div>
-
-          {/* Middle strip - rooms */}
-          {Object.keys(roomMap).length > 0 && (
-            <div className="pointer-events-auto flex items-center gap-2">
-              <div className="flex gap-2 overflow-x-auto rounded-xl border border-cyan-500/[0.08] bg-black/60 p-2 backdrop-blur-xl hud-border-glow" style={{ scrollbarWidth: "none" }}>
-                {Object.entries(roomMap).map(([roomName, roomAgents]) => (
-                  <RoomCard
-                    key={roomName}
-                    name={roomName}
-                    agents={roomAgents}
-                    icon={roomIcons[roomName] ?? "🏠"}
-                  />
+              <div className="flex flex-wrap gap-1">
+                {liveMetrics.map((metric) => (
+                  <MetricCard key={metric.label} metric={metric} />
                 ))}
               </div>
             </div>
-          )}
+          </div>
 
-          {/* Bottom strip - agents + events + resources */}
+          {/* MIDDLE: Clusters + Suggestions */}
+          <div className="pointer-events-auto flex items-start gap-2">
+            {/* Cluster cards */}
+            {backend.clusters.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto rounded-xl border border-cyan-500/[0.08] bg-black/60 p-2 backdrop-blur-xl hud-border-glow" style={{ scrollbarWidth: "none" }}>
+                {backend.clusters.map((cluster) => (
+                  <ClusterCard key={cluster.id} cluster={cluster} />
+                ))}
+              </div>
+            )}
+
+            {/* AI Suggestions */}
+            {backend.suggestions.length > 0 && (
+              <div className="relative flex min-w-[14rem] max-w-[18rem] flex-col gap-1 rounded-xl border border-cyan-500/[0.08] bg-black/60 p-2 backdrop-blur-xl hud-border-glow">
+                <CornerFrame />
+                <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.24em] text-cyan-400/35">
+                  <span className="hud-pulse h-1.5 w-1.5 rounded-full bg-cyan-400/60" />
+                  AI SUGGESTIONS
+                </div>
+                <div className="mt-1 flex flex-col gap-1">
+                  {backend.suggestions.slice(0, 3).map((s) => (
+                    <SuggestionCard key={s.id} suggestion={s} onAction={handleSuggestionAction} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* BOTTOM: Agent nodes + resources + events */}
           <div className="pointer-events-auto flex items-end gap-2">
-            {/* Agent swarm */}
+            {/* Agent swarm with detail */}
             <div className="relative flex min-w-0 flex-1 flex-col gap-1.5 rounded-xl border border-cyan-500/[0.08] bg-black/60 p-2 backdrop-blur-xl hud-border-glow">
               <CornerFrame />
               <div className="flex items-center justify-between">
@@ -437,25 +551,14 @@ export function BusinessHUD({
 
               <div className="flex flex-wrap gap-1">
                 {mergedAgents.slice(0, 12).map((agent) => (
-                  <AgentPill key={agent.id} agent={agent} />
+                  <AgentNode key={agent.id} agent={agent} />
                 ))}
-              </div>
-
-              <div className="mt-1 border-t border-cyan-500/[0.06] pt-1">
-                <div className="flex items-center justify-between font-mono text-[8px] tracking-wider text-white/20">
-                  <span>SPEND €{formatCompact(spendAnimated / 100)}</span>
-                  <span>TOKENS {formatCompact(tokensAnimated)}</span>
-                  <span>RUNS {formatCompact(completedToday)}</span>
-                  <span>
-                    SUCCESS {successRate > 0 ? `${Math.round(successRate * 100)}%` : "—"}
-                  </span>
-                </div>
               </div>
             </div>
 
-            {/* Resource monitor */}
+            {/* Resource monitor with GPU detail */}
             {backend.resources && (
-              <div className="relative w-40 rounded-xl border border-cyan-500/[0.08] bg-black/60 p-2 backdrop-blur-xl hud-border-glow">
+              <div className="relative w-44 rounded-xl border border-cyan-500/[0.08] bg-black/60 p-2 backdrop-blur-xl hud-border-glow">
                 <CornerFrame />
                 <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.24em] text-cyan-400/35">
                   <span className="hud-pulse h-1.5 w-1.5 rounded-full bg-cyan-400/60" />
@@ -465,15 +568,21 @@ export function BusinessHUD({
                   <ResourceBar label="CPU" value={backend.resources.cpu} color="cyan" />
                   <ResourceBar label="RAM" value={backend.resources.memory} color="blue" />
                   <ResourceBar label="DISK" value={backend.resources.storage} color="emerald" />
-                  {backend.resources.gpu !== null && (
-                    <ResourceBar label="GPU" value={backend.resources.gpu} color="fuchsia" />
+                  {gpuInfo?.available && (
+                    <>
+                      <ResourceBar label="GPU" value={gpuInfo.utilization} color="fuchsia" />
+                      <div className="flex items-center justify-between font-mono text-[7px] text-white/20">
+                        <span>VRAM {gpuInfo.memoryUsed}/{gpuInfo.memoryTotal}MB</span>
+                        <span className={gpuInfo.temperature > 80 ? "text-rose-400/60" : "text-white/20"}>{gpuInfo.temperature}°C</span>
+                      </div>
+                    </>
                   )}
                 </div>
               </div>
             )}
 
             {/* Live event stream */}
-            <div className="relative w-52 rounded-xl border border-cyan-500/[0.08] bg-black/60 p-2 backdrop-blur-xl hud-border-glow">
+            <div className="relative w-56 rounded-xl border border-cyan-500/[0.08] bg-black/60 p-2 backdrop-blur-xl hud-border-glow">
               <CornerFrame />
               <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.24em] text-cyan-400/35">
                 <span className="hud-pulse h-1.5 w-1.5 rounded-full bg-cyan-400/60" />
