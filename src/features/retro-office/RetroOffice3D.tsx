@@ -220,6 +220,11 @@ import {
   SpotlightEffect as SceneSpotlightEffect,
 } from "@/features/retro-office/systems/sceneRuntime";
 import { applyAgentCollisionBumps } from "@/features/retro-office/systems/NavigationSystem";
+import { CinematicEffects } from "@/features/retro-office/systems/CinematicEffects";
+import {
+  describeQuality,
+  useCinematicQuality,
+} from "@/features/retro-office/systems/cinematicSettings";
 import {
   HeatmapSystem as AgentHeatmapSystem,
   TrailSystem as AgentTrailSystem,
@@ -2644,6 +2649,10 @@ export function RetroOffice3D({
       ].join(":"),
     [agents.length, gatewayStatus, officeCenterSignal, remoteOfficeEnabled],
   );
+  // Cinematic post-processing toggle. Persisted in localStorage so the
+  // user's preference survives reloads. See ./systems/cinematicSettings.ts
+  // and ./systems/CinematicEffects.tsx for the available quality levels.
+  const cinematic = useCinematicQuality();
   // New Idea 7: heatmap mode.
   const [heatmapMode, setHeatmapMode] = useState(false);
   const [trailMode, setTrailMode] = useState(false);
@@ -5827,6 +5836,12 @@ export function RetroOffice3D({
               onMove={handleFloorMove}
               onClick={handleFloorClick}
             />
+
+            {/* Post-processing pipeline. Must be the last child of <Canvas>
+                so it composes over everything rendered above. Quality is
+                user-toggleable; see the cinematic-mode button in the bottom
+                control bar. */}
+            <CinematicEffects quality={cinematic.quality} />
           </Canvas>
         ) : null}
       </div>
@@ -5865,6 +5880,15 @@ export function RetroOffice3D({
                 {icon}
               </button>
             ))}
+            <button
+              type="button"
+              title={`Cinematic mode: ${cinematic.quality} (${describeQuality(cinematic.quality)}) — click to cycle`}
+              onClick={cinematic.cycleQuality}
+              className="ml-1 h-7 px-2 flex items-center gap-1 rounded-md bg-[#1c1610]/80 text-amber-500/60 border border-amber-900/20 hover:bg-[#2a1e14] hover:text-amber-400 backdrop-blur-sm transition-colors font-mono text-[10px] uppercase tracking-wider"
+            >
+              <Camera size={12} />
+              <span>{cinematic.quality}</span>
+            </button>
           </div>
           {standupMeeting ? (
             <button
