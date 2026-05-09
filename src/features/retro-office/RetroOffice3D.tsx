@@ -4589,10 +4589,12 @@ export function RetroOffice3D({
         setManualPhoneCallScenario(
           buildMockPhoneCallScenario({
             callee: "my contact",
-            // Empty message so the booth opens in `needs_message` phase
-            // and prompts the user for what to say, instead of dialing
-            // out with a placeholder demo line.
-            message: null,
+            // Manual booth click runs the full demo flow (RetroOffice3D's
+            // immersive screen does not implement the `needs_message`
+            // prompt UI -- only `OfficeScreen` does). Use a neutral,
+            // realistic message so the demo still plays end-to-end
+            // without sounding like an OpenClaw advertisement.
+            message: "Just checking in to see how things are going.",
             voiceAvailable:
               voiceRepliesLoaded &&
               Boolean(voiceRepliesVoiceId) &&
