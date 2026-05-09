@@ -4,12 +4,15 @@
 FROM node:20-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts --omit=dev
+# --legacy-peer-deps: @react-three/flex@1.0.1 still declares a React 18 peer
+# while the rest of the stack is on React 19. Identical to the local dev
+# workflow.
+RUN npm ci --ignore-scripts --omit=dev --legacy-peer-deps
 
 FROM node:20-slim AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts --legacy-peer-deps
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 # Build-time gateway URL (overridden at runtime by CLAW3D_GATEWAY_URL).
