@@ -4589,7 +4589,10 @@ export function RetroOffice3D({
         setManualPhoneCallScenario(
           buildMockPhoneCallScenario({
             callee: "my contact",
-            message: "This is a demo call from the OpenClaw phone booth.",
+            // Empty message so the booth opens in `needs_message` phase
+            // and prompts the user for what to say, instead of dialing
+            // out with a placeholder demo line.
+            message: null,
             voiceAvailable:
               voiceRepliesLoaded &&
               Boolean(voiceRepliesVoiceId) &&
