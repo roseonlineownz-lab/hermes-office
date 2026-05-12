@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   GatewayBrowserClient,
   clearGatewayBrowserSessionStorage,
+  type GatewayBrowserClientStatusInfo,
+  type GatewayConnectionStatus,
   type GatewayHelloOk,
 } from "./openclaw/GatewayBrowserClient";
 import type {
@@ -252,6 +254,7 @@ export class GatewayClient {
   private manualDisconnect = false;
   private lastHello: GatewayHelloOk | null = null;
   private _lastDisconnectCode: number | null = null;
+  private browserStatus: GatewayBrowserClientStatusInfo | null = null;
 
   onStatus(handler: StatusHandler) {
     this.statusHandlers.add(handler);
@@ -338,6 +341,11 @@ export class GatewayClient {
         if (this.client !== nextClient) return;
         this.gapHandlers.forEach((handler) => handler({ expected, received }));
       },
+      onStatusChange: (info) => {
+        if (this.client !== nextClient) return;
+        const normalizedStatus: GatewayConnectionStatus = info.status;
+        this.browserStatus = { ...info, status: normalizedStatus };
+      },
     });
 
     this.client = nextClient;
@@ -400,6 +408,10 @@ export class GatewayClient {
 
   getLastHello() {
     return this.lastHello;
+  }
+
+  getBrowserStatus() {
+    return this.browserStatus;
   }
 
   get lastDisconnectCode() {
@@ -613,6 +625,7 @@ export type GatewayConnectionState = {
   adapterProfiles: Partial<Record<StudioGatewayAdapterType, { url: string; token: string }>>;
   localGatewayDefaults: StudioGatewaySettings | null;
   error: string | null;
+  browserStatus: GatewayBrowserClientStatusInfo | null;
   connectPromptReady: boolean;
   shouldPromptForConnect: boolean;
   connect: () => Promise<void>;
@@ -736,6 +749,7 @@ export const useGatewayConnection = (
   );
   const [status, setStatus] = useState<GatewayStatus>("disconnected");
   const [error, setError] = useState<string | null>(null);
+  const [browserStatus, setBrowserStatus] = useState<GatewayBrowserClientStatusInfo | null>(null);
   const [connectErrorCode, setConnectErrorCode] = useState<string | null>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [hasLastKnownGoodState, setHasLastKnownGoodState] = useState(false);
@@ -847,6 +861,10 @@ export const useGatewayConnection = (
       }
     });
   }, [client]);
+
+  useEffect(() => {
+    setBrowserStatus(client.getBrowserStatus());
+  }, [client, status]);
 
   useEffect(() => {
     return () => {
@@ -1051,7 +1069,7 @@ export const useGatewayConnection = (
         retryTimerRef.current = null;
       }
     };
-  }, [connect, connectErrorCode, error, gatewayUrl, selectedAdapterType, status]);
+  }, [client.lastDisconnectCode, connect, connectErrorCode, error, gatewayUrl, selectedAdapterType, status]);
 
   // Reset retry count after the connection has been stable for a minimum
   // duration.  If the upstream drops the connection quickly (e.g. within a
@@ -1203,6 +1221,7 @@ export const useGatewayConnection = (
     adapterProfiles,
     localGatewayDefaults,
     error,
+    browserStatus,
     connectPromptReady,
     shouldPromptForConnect,
     connect,

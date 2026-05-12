@@ -382,6 +382,21 @@ type Pending = {
   reject: (err: unknown) => void;
 };
 
+export type GatewayConnectionStatus =
+  | "idle"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "degraded"
+  | "failed"
+  | "closed";
+
+export type GatewayBrowserClientStatusInfo = {
+  status: GatewayConnectionStatus;
+  failedAttempts: number;
+  nextDelayMs: number | null;
+};
+
 export type GatewayBrowserClientOptions = {
   url: string;
   token?: string;
@@ -397,10 +412,21 @@ export type GatewayBrowserClientOptions = {
   onEvent?: (evt: GatewayEventFrame) => void;
   onClose?: (info: { code: number; reason: string }) => void;
   onGap?: (info: { expected: number; received: number }) => void;
+  onStatusChange?: (info: GatewayBrowserClientStatusInfo) => void;
 };
 
 const CONNECT_FAILED_CLOSE_CODE = 4008;
 const WS_CLOSE_REASON_MAX_BYTES = 123;
+const BASE_RECONNECT_DELAY_MS = 800;
+const MAX_RECONNECT_DELAY_MS = 15_000;
+const BACKOFF_FACTOR = 1.7;
+const MAX_VISIBLE_FAILURES = 3;
+const JITTER_RATIO = 0.25;
+
+function withJitter(delayMs: number) {
+  const jitter = delayMs * JITTER_RATIO;
+  return Math.max(1, Math.round(delayMs - jitter + Math.random() * jitter * 2));
+}
 
 function truncateWsCloseReason(reason: string, maxBytes = WS_CLOSE_REASON_MAX_BYTES): string {
   const trimmed = reason.trim();
@@ -421,16 +447,26 @@ export class GatewayBrowserClient {
   private ws: WebSocket | null = null;
   private pending = new Map<string, Pending>();
   private closed = false;
+  private disposed = false;
+  private manualClose = false;
+  private currentStatus: GatewayConnectionStatus = "idle";
+  private failedAttempts = 0;
+  private reconnectTimer: number | null = null;
   private lastSeq: number | null = null;
   private connectNonce: string | null = null;
   private connectSent = false;
   private connectTimer: number | null = null;
-  private backoffMs = 800;
+  private backoffMs = BASE_RECONNECT_DELAY_MS;
 
   constructor(private opts: GatewayBrowserClientOptions) {}
 
   start() {
     this.closed = false;
+    this.disposed = false;
+    this.manualClose = false;
+    this.failedAttempts = 0;
+    this.backoffMs = BASE_RECONNECT_DELAY_MS;
+    this.emitStatus("connecting");
     gatewayBrowserDebugLog("start", {
       url: this.opts.url,
       authScopeKey: this.opts.authScopeKey ?? null,
@@ -442,11 +478,27 @@ export class GatewayBrowserClient {
   }
 
   stop() {
+    if (this.closed && this.disposed && this.manualClose && this.ws === null && this.reconnectTimer === null) {
+      this.emitStatus("closed");
+      return;
+    }
     this.closed = true;
+    this.disposed = true;
+    this.manualClose = true;
+    this.clearReconnectTimer();
     gatewayBrowserDebugLog("stop");
-    this.ws?.close();
+
+    const ws = this.ws;
+    if (ws) {
+      this.clearSocketHandlers(ws);
+      if (this.canCloseSocket(ws)) {
+        ws.close();
+      }
+    }
+
     this.ws = null;
     this.flushPending(new Error("gateway client stopped"));
+    this.emitStatus("closed");
   }
 
   get connected() {
@@ -454,33 +506,97 @@ export class GatewayBrowserClient {
   }
 
   private connect() {
-    if (this.closed) return;
+    if (this.closed || this.disposed) return;
+    this.clearReconnectTimer();
+    this.emitStatus(this.failedAttempts > 0 ? "reconnecting" : "connecting");
+
     gatewayBrowserDebugLog("connect:open-socket", { url: this.opts.url });
-    this.ws = new WebSocket(this.opts.url);
-    this.ws.onopen = () => {
+    const ws = new WebSocket(this.opts.url);
+    this.ws = ws;
+
+    ws.onopen = () => {
+      if (this.ws !== ws || this.closed || this.disposed) return;
       gatewayBrowserDebugLog("socket:open");
+      this.failedAttempts = 0;
+      this.backoffMs = BASE_RECONNECT_DELAY_MS;
+      this.manualClose = false;
+      this.emitStatus("connected");
       this.queueConnect();
     };
-    this.ws.onmessage = (ev) => this.handleMessage(String(ev.data ?? ""));
-    this.ws.onclose = (ev) => {
+
+    ws.onmessage = (ev) => {
+      if (this.ws !== ws || this.closed || this.disposed) return;
+      this.handleMessage(String(ev.data ?? ""));
+    };
+
+    ws.onclose = (ev) => {
+      if (this.ws !== ws) return;
       const reason = String(ev.reason ?? "");
       gatewayBrowserDebugLog("socket:close", { code: ev.code, reason });
       this.ws = null;
       this.flushPending(new Error(`gateway closed (${ev.code}): ${reason}`));
       this.opts.onClose?.({ code: ev.code, reason });
-      this.scheduleReconnect();
+
+      if (this.closed || this.disposed || this.manualClose) {
+        this.clearReconnectTimer();
+        this.emitStatus("closed");
+        return;
+      }
+
+      this.failedAttempts += 1;
+      const nextDelayMs = withJitter(this.backoffMs);
+      const nextStatus =
+        this.failedAttempts >= MAX_VISIBLE_FAILURES ? "degraded" : "reconnecting";
+      this.emitStatus(nextStatus, nextDelayMs);
+      this.scheduleReconnect(nextDelayMs);
     };
-    this.ws.onerror = () => {
+
+    ws.onerror = () => {
+      if (this.ws !== ws) return;
       gatewayBrowserDebugLog("socket:error");
     };
   }
 
-  private scheduleReconnect() {
-    if (this.closed) return;
-    const delay = this.backoffMs;
-    this.backoffMs = Math.min(this.backoffMs * 1.7, 15_000);
+  private scheduleReconnect(delayOverrideMs?: number) {
+    if (this.closed || this.disposed || this.manualClose) return;
+    const delay = delayOverrideMs ?? withJitter(this.backoffMs);
+    this.backoffMs = Math.min(
+      this.backoffMs * BACKOFF_FACTOR,
+      MAX_RECONNECT_DELAY_MS
+    );
     gatewayBrowserDebugLog("schedule-reconnect", { delay });
-    window.setTimeout(() => this.connect(), delay);
+    this.clearReconnectTimer();
+    this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = null;
+      if (this.closed || this.disposed || this.manualClose) return;
+      this.connect();
+    }, delay);
+  }
+
+  private clearReconnectTimer() {
+    if (this.reconnectTimer === null) return;
+    window.clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+  }
+
+  private canCloseSocket(ws: WebSocket) {
+    return ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN;
+  }
+
+  private clearSocketHandlers(ws: WebSocket) {
+    ws.onopen = null;
+    ws.onmessage = null;
+    ws.onclose = null;
+    ws.onerror = null;
+  }
+
+  private emitStatus(status: GatewayConnectionStatus, nextDelayMs: number | null = null) {
+    this.currentStatus = status;
+    this.opts.onStatusChange?.({
+      status,
+      failedAttempts: this.failedAttempts,
+      nextDelayMs,
+    });
   }
 
   private flushPending(err: Error) {
@@ -605,7 +721,7 @@ export class GatewayBrowserClient {
             scopes: hello.auth.scopes ?? [],
           });
         }
-        this.backoffMs = 800;
+        this.backoffMs = BASE_RECONNECT_DELAY_MS;
         this.opts.onHello?.(hello);
       })
       .catch((err) => {
