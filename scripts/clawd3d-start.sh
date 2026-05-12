@@ -2,7 +2,11 @@
 set -euo pipefail
 
 LAUNCHER="${HOME}/bin/claw3d-launcher"
+BOOTSTRAP="${HOME}/bin/claw3d-bootstrap"
 if [[ -x "$LAUNCHER" ]]; then
+  if [[ -x "$BOOTSTRAP" ]]; then
+    exec "$BOOTSTRAP" start --wait 90 "$@"
+  fi
   exec "$LAUNCHER" "$@"
 fi
 

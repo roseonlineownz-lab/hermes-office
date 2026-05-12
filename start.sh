@@ -18,6 +18,28 @@ OFFICE_DIR="$SCRIPT_DIR"
 ADAPTER_LOG="/tmp/hermes-adapter.log"
 OFFICE_LOG="/tmp/hermes-office.log"
 COMPOSE_DIR="$HOME/.hermes/docker"
+CLAW3D_PORT_FILE="${CLAW3D_PORT_FILE:-$HOME/.hermes/claw3d-port}"
+
+resolve_office_port() {
+  if [[ -n "${CLAW3D_OFFICE_PORT:-}" ]]; then
+    echo "$CLAW3D_OFFICE_PORT"
+    return 0
+  fi
+
+  if [[ -r "$CLAW3D_PORT_FILE" ]]; then
+    local port
+    port="$(tr -cd '0-9' < "$CLAW3D_PORT_FILE" | head -c 5)"
+    if [[ -n "$port" ]]; then
+      echo "$port"
+      return 0
+    fi
+  fi
+
+  echo "9119"
+}
+
+OFFICE_PORT="$(resolve_office_port)"
+OFFICE_URL="http://127.0.0.1:${OFFICE_PORT}"
 
 wait_for_http() {
   local name="$1" url="$2" max_wait="${3:-20}"
@@ -117,17 +139,17 @@ else
 fi
 
 # ── 6. NovaMaster Office (Next.js) ─────────────────────────────────────────
-if curl -sf --max-time 2 http://127.0.0.1:3000/ &>/dev/null; then
+if curl -sf --max-time 2 "${OFFICE_URL}/" &>/dev/null; then
   log "NovaMaster Office already running"
 else
-  log "Starting NovaMaster Office..."
+  log "Starting NovaMaster Office on :${OFFICE_PORT}..."
   cd "$OFFICE_DIR"
-  fuser -k 3000/tcp &>/dev/null || true
+  fuser -k "${OFFICE_PORT}/tcp" &>/dev/null || true
   sleep 1
   > "$OFFICE_LOG"
-  nohup node server/index.js >> "$OFFICE_LOG" 2>&1 &
+  nohup env PORT="$OFFICE_PORT" node server/index.js >> "$OFFICE_LOG" 2>&1 &
   OFFICE_PID=$!
-  if wait_for_http "Office" "http://127.0.0.1:3000/" 15; then
+  if wait_for_http "Office" "${OFFICE_URL}/" 15; then
     log "NovaMaster Office ready (PID $OFFICE_PID)"
   else
     err "Office failed — check $OFFICE_LOG"
@@ -174,11 +196,11 @@ echo -e "${BOLD}═════════════════════�
 echo -e "${BOLD}  NovaMaster Stack is running!${NC}"
 echo -e "${BOLD}═══════════════════════════════════════════════════${NC}"
 echo ""
-echo -e "  ${GREEN}Office:${NC}        http://localhost:3000"
+echo -e "  ${GREEN}Office:${NC}        ${OFFICE_URL}"
 echo -e "  ${GREEN}Adapter:${NC}       ws://127.0.0.1:18789"
 echo -e "  ${GREEN}Gateway:${NC}       ws://127.0.0.1:18791"
 echo -e "  ${GREEN}Hermes API:${NC}   http://127.0.0.1:8642"
-echo -e "  ${GREEN}Dashboard:${NC}    http://127.0.0.1:9119"
+echo -e "  ${GREEN}Dashboard:${NC}    ${OFFICE_URL}"
 echo ""
 echo -e "  ${YELLOW}Logs:${NC}"
 echo -e "    Adapter: $ADAPTER_LOG"

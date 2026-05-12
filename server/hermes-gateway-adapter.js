@@ -57,7 +57,7 @@ function loadRuntimeEnv() {
 loadRuntimeEnv();
 
 const HERMES_API_URL = (process.env.HERMES_API_URL || "http://localhost:8642").replace(/\/$/, "");
-const HERMES_API_KEY = process.env.HERMES_API_KEY || "";
+const HERMES_API_KEY = process.env.HERMES_API_KEY || process.env.API_SERVER_KEY || "";
 const ADAPTER_PORT = parseInt(process.env.HERMES_ADAPTER_PORT || "18789", 10);
 const HERMES_MODEL = process.env.HERMES_MODEL || "hermes";
 const HERMES_AGENT_NAME = process.env.HERMES_AGENT_NAME || "Hermes";
@@ -1282,21 +1282,174 @@ function startAdapter() {
     });
   });
 
-  httpServer.listen(ADAPTER_PORT, "127.0.0.1", () => {
-    console.log(`\n[hermes-adapter] ✓ Listening on ws://localhost:${ADAPTER_PORT}`);
-    console.log(`[hermes-adapter] ✓ Forwarding to Hermes API at ${HERMES_API_URL}`);
-    console.log(`[hermes-adapter] ✓ Model: ${HERMES_MODEL}`);
-    console.log(`[hermes-adapter] ✓ Multi-agent orchestration: ENABLED`);
-    console.log(`\nOpen Claw3D → ws://localhost:${ADAPTER_PORT}\n`);
-  });
+  // --- Robust port acquisition: kill zombies, fallback ports ---
+  const PORT_FALLBACKS = [18792, 18793, 18794, 18795, 18796];
+  const ALL_PORTS = [ADAPTER_PORT, ...PORT_FALLBACKS];
 
+  function sleepSync(ms) {
+    const buffer = new SharedArrayBuffer(4);
+    Atomics.wait(new Int32Array(buffer), 0, 0, ms);
+  }
+
+  function readListeningSocketInodes(port) {
+    const targetPort = Number(port);
+    const inodes = new Set();
+    for (const procFile of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+      let content = "";
+      try {
+        content = fs.readFileSync(procFile, "utf8");
+      } catch {
+        continue;
+      }
+      for (const line of content.trim().split("\n").slice(1)) {
+        const fields = line.trim().split(/\s+/);
+        const localAddress = fields[1] || "";
+        const state = fields[3] || "";
+        const inode = fields[9] || "";
+        const portHex = localAddress.split(":").pop() || "";
+        if (state === "0A" && parseInt(portHex, 16) === targetPort && inode) {
+          inodes.add(inode);
+        }
+      }
+    }
+    return inodes;
+  }
+
+  function findProcessesForSocketInodes(inodes) {
+    if (inodes.size === 0) return [];
+    const matches = [];
+    let entries = [];
+    try {
+      entries = fs.readdirSync("/proc", { withFileTypes: true });
+    } catch {
+      return matches;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
+      const pid = Number(entry.name);
+      if (pid === process.pid || pid === process.ppid) continue;
+      const fdDir = `/proc/${pid}/fd`;
+      let fds = [];
+      try {
+        fds = fs.readdirSync(fdDir);
+      } catch {
+        continue;
+      }
+      const ownsSocket = fds.some((fd) => {
+        try {
+          const link = fs.readlinkSync(path.join(fdDir, fd));
+          const match = link.match(/^socket:\[(\d+)]$/);
+          return Boolean(match && inodes.has(match[1]));
+        } catch {
+          return false;
+        }
+      });
+      if (!ownsSocket) continue;
+      let cmdline = "";
+      try {
+        cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").replace(/\0/g, " ").trim();
+      } catch {
+        continue;
+      }
+      matches.push({ pid, cmdline });
+    }
+    return matches;
+  }
+
+  function isAdapterZombie(processInfo) {
+    const cmdline = processInfo.cmdline || "";
+    return cmdline.includes("hermes-gateway-adapter.js");
+  }
+
+  function waitForPortRelease(port, timeoutMs = 3000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (readListeningSocketInodes(port).size === 0) return true;
+      sleepSync(100);
+    }
+    return readListeningSocketInodes(port).size === 0;
+  }
+
+  /**
+   * Kill adapter-owned zombie processes still holding one of our target ports.
+   * Uses /proc socket inode mapping instead of shell pipelines, and only kills
+   * processes whose cmdline is this adapter script.
+   */
+  function killZombie(port) {
+    const holders = findProcessesForSocketInodes(readListeningSocketInodes(port));
+    for (const holder of holders) {
+      if (!isAdapterZombie(holder)) continue;
+      const preview = holder.cmdline.slice(0, 120);
+      console.log(`[hermes-adapter] Killing zombie PID ${holder.pid} holding port ${port} (${preview})`);
+      try {
+        process.kill(holder.pid, "SIGTERM");
+      } catch {
+        continue;
+      }
+      if (waitForPortRelease(port, 1500)) continue;
+      try {
+        process.kill(holder.pid, "SIGKILL");
+      } catch { /* process already gone */ }
+      waitForPortRelease(port, 1500);
+    }
+  }
+
+  /**
+   * Try to listen on the configured port, then fallbacks. Kills zombies first.
+   * Returns the port number that succeeded, or throws after all ports fail.
+   */
+  function listenWithFallback() {
+    return new Promise((resolve, reject) => {
+      let idx = 0;
+
+      function tryNext(err) {
+        if (err) {
+          if (err.code === "EADDRINUSE" && idx > 0) {
+            console.error(`[hermes-adapter] Port ${ALL_PORTS[idx - 1]} in use — trying fallback ${ALL_PORTS[idx]}...`);
+          }
+        }
+        if (idx >= ALL_PORTS.length) {
+          return reject(new Error(`All ports failed [${ALL_PORTS.join(", ")}]. Last error on port ${ALL_PORTS[idx - 1]}: ${err ? err.code : "unknown"}`));
+        }
+        const port = ALL_PORTS[idx++];
+        // Kill zombies on this port before trying
+        killZombie(port);
+        httpServer.once("error", tryNext);
+        httpServer.listen(port, "127.0.0.1", () => {
+          httpServer.removeListener("error", tryNext);
+          resolve(port);
+        });
+      }
+
+      tryNext(null);
+    });
+  }
+
+  // Start listening with fallback
+  (async () => {
+    try {
+      const port = await listenWithFallback();
+      console.log(`\n[hermes-adapter] ✓ Listening on ws://localhost:${port}`);
+      console.log(`[hermes-adapter] ✓ Forwarding to Hermes API at ${HERMES_API_URL}`);
+      console.log(`[hermes-adapter] ✓ Model: ${HERMES_MODEL}`);
+      console.log(`[hermes-adapter] ✓ Multi-agent orchestration: ENABLED`);
+      console.log(`\nOpen Claw3D → ws://localhost:${port}\n`);
+    } catch (err) {
+      console.error("[hermes-adapter] FATAL:", err.message);
+      process.exit(1);
+    }
+  })();
+
+  // Keep the original error handler for runtime (not startup) errors
   httpServer.on("error", (err) => {
     if (err.code === "EADDRINUSE") {
-      console.error(`[hermes-adapter] Port ${ADAPTER_PORT} in use. Set HERMES_ADAPTER_PORT to change it.`);
+      // This only fires for runtime errors post-listen; startup is handled above
+      console.error(`[hermes-adapter] Runtime EADDRINUSE (should not happen) — restarting`);
+      process.exit(2);
     } else {
       console.error("[hermes-adapter] Server error:", sanitizeErrorMessage(err));
     }
-    process.exit(1);
   });
 }
 
