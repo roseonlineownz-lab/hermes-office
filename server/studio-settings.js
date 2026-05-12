@@ -58,8 +58,19 @@ const readJsonFile = (filePath) => {
 
 const DEFAULT_GATEWAY_URL = "ws://localhost:18789";
 const OPENCLAW_CONFIG_FILENAME = "openclaw.json";
+const ENV_TOKEN_REF_PREFIX = "ref:env:";
 
 const isRecord = (value) => Boolean(value && typeof value === "object");
+
+const resolveTokenValue = (rawToken, env = process.env) => {
+  const token = typeof rawToken === "string" ? rawToken.trim() : "";
+  if (!token) return "";
+  if (!token.startsWith(ENV_TOKEN_REF_PREFIX)) return token;
+  const envKey = token.slice(ENV_TOKEN_REF_PREFIX.length).trim();
+  if (!envKey) return "";
+  const resolved = env[envKey];
+  return typeof resolved === "string" ? resolved.trim() : "";
+};
 
 const readOpenclawGatewayDefaults = (env = process.env) => {
   try {
@@ -87,12 +98,15 @@ const loadUpstreamGatewaySettings = (env = process.env) => {
   const parsed = readJsonFile(settingsPath);
   const gateway = parsed && typeof parsed === "object" ? parsed.gateway : null;
   const url = typeof gateway?.url === "string" ? gateway.url.trim() : "";
-  const token = typeof gateway?.token === "string" ? gateway.token.trim() : "";
+  const token = resolveTokenValue(gateway?.token, env);
   const adapterType =
     typeof gateway?.adapterType === "string" && gateway.adapterType.trim()
       ? gateway.adapterType.trim()
       : "openclaw";
-  if (!token && adapterType === "openclaw") {
+
+  // For openclaw/local profiles, always prefer the token from openclaw.json
+  // This is the source of truth for gateway auth
+  if (adapterType === "openclaw" || adapterType === "local") {
     const defaults = readOpenclawGatewayDefaults(env);
     if (defaults) {
       return {
@@ -103,6 +117,19 @@ const loadUpstreamGatewaySettings = (env = process.env) => {
       };
     }
   }
+
+  if (!token) {
+    const defaults = readOpenclawGatewayDefaults(env);
+    if (defaults) {
+      return {
+        url: url || defaults.url,
+        token: defaults.token,
+        adapterType,
+        settingsPath,
+      };
+    }
+  }
+
   return {
     url: url || DEFAULT_GATEWAY_URL,
     token,
