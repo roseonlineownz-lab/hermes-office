@@ -13,19 +13,27 @@ import {
   type StudioSettingsPatch,
 } from "@/lib/studio/settings";
 
-// Studio settings are intentionally stored as a local JSON file for a single-user workflow.
-// That includes gateway connection details, so treat the state directory as plaintext secret
-// storage and document any changes to this threat model in README.md and SECURITY.md.
 const SETTINGS_DIRNAME = "claw3d";
 const SETTINGS_FILENAME = "settings.json";
 const OPENCLAW_CONFIG_FILENAME = "openclaw.json";
 const DEFAULT_LOCAL_GATEWAY_PORT = 18789;
+const ENV_TOKEN_REF_PREFIX = "ref:env:";
 
 export const resolveStudioSettingsPath = () =>
   path.join(resolveStateDir(), SETTINGS_DIRNAME, SETTINGS_FILENAME);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === "object");
+
+const resolveTokenValue = (rawToken: unknown): string => {
+  const token = typeof rawToken === "string" ? rawToken.trim() : "";
+  if (!token) return "";
+  if (!token.startsWith(ENV_TOKEN_REF_PREFIX)) return token;
+  const envKey = token.slice(ENV_TOKEN_REF_PREFIX.length).trim();
+  if (!envKey) return "";
+  const resolved = process.env[envKey];
+  return typeof resolved === "string" ? resolved.trim() : "";
+};
 
 const buildGatewaySettings = (params: {
   adapterType: StudioGatewayAdapterType;
@@ -97,7 +105,7 @@ const readPortBasedGatewayProfile = (
 
 const buildEnvGatewayDefaults = (): StudioGatewaySettings | null => {
   const envUrl = process.env.CLAW3D_GATEWAY_URL?.trim();
-  const envToken = process.env.CLAW3D_GATEWAY_TOKEN?.trim() ?? "";
+  const envToken = resolveTokenValue(process.env.CLAW3D_GATEWAY_TOKEN);
   const envAdapterType =
     normalizeAdapterType(process.env.CLAW3D_GATEWAY_ADAPTER_TYPE) ?? "openclaw";
 
@@ -175,13 +183,26 @@ export const loadStudioSettings = (): StudioSettings => {
   }
   const raw = fs.readFileSync(settingsPath, "utf8");
   const parsed = JSON.parse(raw) as unknown;
-  const settings = normalizeStudioSettings(parsed);
+  let settings = normalizeStudioSettings(parsed);
+
+  if (settings.gateway) {
+    const resolvedGatewayToken = resolveTokenValue(settings.gateway.token);
+    if (resolvedGatewayToken !== settings.gateway.token) {
+      settings = {
+        ...settings,
+        gateway: {
+          ...settings.gateway,
+          token: resolvedGatewayToken,
+        },
+      };
+    }
+  }
 
   // For openclaw/local adapter types, always prefer the token from openclaw.json
   // since it's the authoritative source for the gateway auth token.
   // This prevents stale/wrong tokens from settings.json from blocking connections.
   const adapterType = settings.gateway?.adapterType ?? "openclaw";
-  if (adapterType === "openclaw" || adapterType === "local") {
+  if (adapterType === "openclaw" || adapterType === "local" || !settings.gateway?.token) {
     const gateway = loadLocalGatewayDefaults();
     if (gateway) {
       return {
@@ -191,22 +212,6 @@ export const loadStudioSettings = (): StudioSettings => {
               ...settings.gateway,
               url: settings.gateway.url.trim(),
               token: gateway.token,
-            }
-          : gateway,
-      };
-    }
-  }
-
-  if (!settings.gateway?.token) {
-    const gateway = loadLocalGatewayDefaults();
-    if (gateway) {
-      return {
-        ...settings,
-        gateway: settings.gateway?.url?.trim()
-          ? {
-              url: settings.gateway.url.trim(),
-              token: gateway.token,
-              adapterType: settings.gateway.adapterType,
             }
           : gateway,
       };

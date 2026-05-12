@@ -253,6 +253,22 @@ function createGatewayProxy(options) {
       const connectParams = isObject(baseConnectFrame.params)
         ? { ...baseConnectFrame.params }
         : {};
+      // For non-OpenClaw adapters the Studio host is the source of truth for
+      // upstream auth; ignore browser-supplied token values to prevent stale
+      // or placeholder UI input from breaking the handshake.
+      if (upstreamAdapterType !== "openclaw") {
+        const rawAuth = isObject(connectParams.auth) ? { ...connectParams.auth } : {};
+        if (upstreamToken) {
+          rawAuth.token = upstreamToken;
+        } else {
+          delete rawAuth.token;
+        }
+        if (Object.keys(rawAuth).length > 0) {
+          connectParams.auth = rawAuth;
+        } else {
+          delete connectParams.auth;
+        }
+      }
       const hasDeviceAuth = hasCompleteDeviceAuth(connectParams);
       const client = isObject(connectParams.client) ? { ...connectParams.client } : {};
       const clientId = typeof client.id === "string" ? client.id.trim() : "";
