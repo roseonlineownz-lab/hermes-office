@@ -64,3 +64,14 @@ mcp_servers:
 2. Keep Playwright MCP as the primary execution backend.
 3. Add telemetry later: last snapshot, last action, verification result, and approval state.
 4. If Windows-native desktop control is required, build a separate Windows bridge instead of forcing macOS tooling into WSL.
+
+## AionUi Remote Agent truth condition
+
+Use this wording in operator docs and status reports:
+
+"Agents zijn klaar voor gebruik zodra ze in AionUi onder Settings → Agents → Remote Agents als Connected staan."
+
+Notes:
+- "Test Connection" validates endpoint reachability only.
+- Full auth/token/device handshake is confirmed on save + runtime connection state.
+- Connected/Pending/Error/Unknown must be checked in AionUi itself for final confirmation.
