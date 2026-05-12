@@ -8,15 +8,15 @@ const securityHeaders = [
       "default-src 'self'",
       "base-uri 'self'",
       "form-action 'self'",
-      "frame-ancestors 'self' http://localhost:* http://127.0.0.1:* file:// hermes-desktop://",
+      "frame-ancestors 'self'",
       "img-src 'self' data: blob: http: https:",
       "font-src 'self' data: https:",
       "style-src 'self' 'unsafe-inline' https:",
       // 'unsafe-eval' is required by Next.js dev mode (source maps, HMR).
       // In production it is dropped — React and Three.js do not need eval.
       ...(process.env.NODE_ENV !== "production"
-        ? ["script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:"]
-        : ["script-src 'self' 'unsafe-inline' blob:"]),
+        ? ["script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' 'unsafe-eval' blob:"]
+        : ["script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:"]),
       // connect-src is intentionally broad: gateway URLs are user-configured
       // at runtime and cannot be enumerated at build time.
       // Restrict further when a fixed deployment target is known.
@@ -41,7 +41,7 @@ const securityHeaders = [
   },
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(self), geolocation=(), browsing-topics=()",
+    value: "camera=(), microphone=(self), geolocation=()",
   },
   {
     key: "Cross-Origin-Resource-Policy",
