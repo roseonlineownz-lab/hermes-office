@@ -37,7 +37,7 @@ const securityHeaders = [
   },
   {
     key: "X-Frame-Options",
-    value: "ALLOWALL",
+    value: "SAMEORIGIN",
   },
   {
     key: "Permissions-Policy",
