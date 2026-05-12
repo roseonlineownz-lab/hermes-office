@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+
 import { OfficeErrorBoundary } from "@/components/ErrorBoundary";
 import { AgentStoreProvider } from "@/features/agents/state/store";
 import { OfficeScreen } from "@/features/office/screens/OfficeScreen";
@@ -16,7 +18,9 @@ export default function OfficePage() {
   return (
     <AgentStoreProvider>
       <OfficeErrorBoundary>
-        <OfficeScreen showOpenClawConsole={showOpenClawConsole} />
+        <Suspense fallback={null}>
+          <OfficeScreen showOpenClawConsole={showOpenClawConsole} />
+        </Suspense>
       </OfficeErrorBoundary>
     </AgentStoreProvider>
   );

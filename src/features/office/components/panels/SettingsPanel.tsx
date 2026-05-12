@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ComputerUseOpsPanel } from "./ComputerUseOpsPanel";
 import { CURATED_ELEVENLABS_VOICES } from "@/lib/voiceReply/catalog";
 import type { StudioGatewayAdapterType } from "@/lib/studio/settings";
 
@@ -226,6 +227,7 @@ export function SettingsPanel({
           </div>
         </div>
       </div>
+      <ComputerUseOpsPanel />
       <div className="mt-3 rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
         <div className="flex items-start justify-between gap-3">
           <div>

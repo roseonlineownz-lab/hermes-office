@@ -118,7 +118,7 @@ export const OFFICE_FLOORS: readonly FloorDefinition[] = [
     provider: "demo",
     kind: "market",
     zone: "building",
-    enabled: false,
+    enabled: true,
     sortOrder: 50,
     runtimeProfileId: null,
   },

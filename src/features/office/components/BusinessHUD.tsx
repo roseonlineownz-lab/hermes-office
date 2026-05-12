@@ -46,7 +46,7 @@ function formatCompact(n: number): string {
 function useAnimatedCounter(target: number, duration = 800) {
   const [display, setDisplay] = useState(target);
   const prev = useRef(target);
-  const start = useRef(Date.now());
+  const start = useRef(0);
   const from = useRef(target);
 
   useEffect(() => {

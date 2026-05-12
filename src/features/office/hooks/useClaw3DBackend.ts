@@ -161,6 +161,11 @@ export function useClaw3DBackend(): Claw3DBackendState {
   const [globalStatus, setGlobalStatus] = useState<BackendGlobalStatus | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectWSRef = useRef<() => void>(() => {});
+
+  const scheduleReconnect = useCallback(() => {
+    reconnectTimer.current = setTimeout(() => connectWSRef.current(), 5000);
+  }, []);
 
   const connectWS = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -191,7 +196,7 @@ export function useClaw3DBackend(): Claw3DBackendState {
       ws.onclose = () => {
         setConnected(false);
         wsRef.current = null;
-        reconnectTimer.current = setTimeout(connectWS, 5000);
+        scheduleReconnect();
       };
 
       ws.onerror = () => {
@@ -200,9 +205,13 @@ export function useClaw3DBackend(): Claw3DBackendState {
 
       wsRef.current = ws;
     } catch {
-      reconnectTimer.current = setTimeout(connectWS, 5000);
+      scheduleReconnect();
     }
-  }, []);
+  }, [scheduleReconnect]);
+
+  useEffect(() => {
+    connectWSRef.current = connectWS;
+  }, [connectWS]);
 
   useEffect(() => {
     const fetchInitial = async () => {
