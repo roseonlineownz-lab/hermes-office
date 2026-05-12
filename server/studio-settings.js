@@ -58,8 +58,19 @@ const readJsonFile = (filePath) => {
 
 const DEFAULT_GATEWAY_URL = "ws://localhost:18789";
 const OPENCLAW_CONFIG_FILENAME = "openclaw.json";
+const ENV_TOKEN_REF_PREFIX = "ref:env:";
 
 const isRecord = (value) => Boolean(value && typeof value === "object");
+
+const resolveTokenValue = (rawToken, env = process.env) => {
+  const token = typeof rawToken === "string" ? rawToken.trim() : "";
+  if (!token) return "";
+  if (!token.startsWith(ENV_TOKEN_REF_PREFIX)) return token;
+  const envKey = token.slice(ENV_TOKEN_REF_PREFIX.length).trim();
+  if (!envKey) return "";
+  const resolved = env[envKey];
+  return typeof resolved === "string" ? resolved.trim() : "";
+};
 
 const readOpenclawGatewayDefaults = (env = process.env) => {
   try {
@@ -87,7 +98,7 @@ const loadUpstreamGatewaySettings = (env = process.env) => {
   const parsed = readJsonFile(settingsPath);
   const gateway = parsed && typeof parsed === "object" ? parsed.gateway : null;
   const url = typeof gateway?.url === "string" ? gateway.url.trim() : "";
-  const token = typeof gateway?.token === "string" ? gateway.token.trim() : "";
+  const token = resolveTokenValue(gateway?.token, env);
   const adapterType =
     typeof gateway?.adapterType === "string" && gateway.adapterType.trim()
       ? gateway.adapterType.trim()
