@@ -1,10 +1,18 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 describe("loadLocalGatewayDefaults with CLAW3D_GATEWAY_URL", () => {
   const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    delete process.env.CLAW3D_GATEWAY_URL;
+    delete process.env.CLAW3D_GATEWAY_TOKEN;
+    delete process.env.CLAW3D_GATEWAY_ADAPTER_TYPE;
+    delete process.env.HERMES_ADAPTER_PORT;
+    delete process.env.DEMO_ADAPTER_PORT;
+  });
 
   afterEach(() => {
     process.env = { ...originalEnv };

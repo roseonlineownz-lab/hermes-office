@@ -47,6 +47,7 @@ describe("office floor registry", () => {
       "local-runtime",
       "claw3d-runtime",
       "custom-second",
+      "traders-floor",
     ]);
   });
 
@@ -82,6 +83,6 @@ describe("office floor registry", () => {
 
   it("cycles across enabled floors only", () => {
     expect(getAdjacentEnabledOfficeFloorId("lobby", 1)).toBe("openclaw-ground");
-    expect(getAdjacentEnabledOfficeFloorId("lobby", -1)).toBe("custom-second");
+    expect(getAdjacentEnabledOfficeFloorId("lobby", -1)).toBe("traders-floor");
   });
 });
