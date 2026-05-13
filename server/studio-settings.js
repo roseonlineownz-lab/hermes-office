@@ -118,18 +118,6 @@ const loadUpstreamGatewaySettings = (env = process.env) => {
     }
   }
 
-  if (!token) {
-    const defaults = readOpenclawGatewayDefaults(env);
-    if (defaults) {
-      return {
-        url: url || defaults.url,
-        token: defaults.token,
-        adapterType,
-        settingsPath,
-      };
-    }
-  }
-
   return {
     url: url || DEFAULT_GATEWAY_URL,
     token,

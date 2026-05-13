@@ -29,9 +29,9 @@ export const resolveUserPath = (
   if (!trimmed) return trimmed;
   if (trimmed.startsWith("~")) {
     const expanded = trimmed.replace(/^~(?=$|[\\/])/, homedir());
-    return path.resolve(expanded);
+    return path.resolve(/* turbopackIgnore: true */ expanded);
   }
-  return path.resolve(trimmed);
+  return path.resolve(/* turbopackIgnore: true */ trimmed);
 };
 
 export const resolveStateDir = (
@@ -44,8 +44,10 @@ export const resolveStateDir = (
     env.CLAWDBOT_STATE_DIR?.trim();
   if (override) return resolveUserPath(override, homedir);
   const defaultHome = resolveDefaultHomeDir(homedir);
-  const newDir = path.join(defaultHome, NEW_STATE_DIRNAME);
-  const legacyDirs = LEGACY_STATE_DIRNAMES.map((dir) => path.join(defaultHome, dir));
+  const newDir = path.join(/* turbopackIgnore: true */ defaultHome, NEW_STATE_DIRNAME);
+  const legacyDirs = LEGACY_STATE_DIRNAMES.map((dir) =>
+    path.join(/* turbopackIgnore: true */ defaultHome, dir)
+  );
   const hasNew = fs.existsSync(newDir);
   if (hasNew) return newDir;
   const existingLegacy = legacyDirs.find((dir) => {
@@ -76,17 +78,19 @@ export const resolveConfigPathCandidates = (
     env.CLAWDBOT_STATE_DIR?.trim();
   if (stateDir) {
     const resolved = resolveUserPath(stateDir, homedir);
-    candidates.push(path.join(resolved, CONFIG_FILENAME));
-    candidates.push(...LEGACY_CONFIG_FILENAMES.map((name) => path.join(resolved, name)));
+    candidates.push(path.join(/* turbopackIgnore: true */ resolved, CONFIG_FILENAME));
+    candidates.push(
+      ...LEGACY_CONFIG_FILENAMES.map((name) => path.join(/* turbopackIgnore: true */ resolved, name))
+    );
   }
 
   const defaultDirs = [
-    path.join(defaultHome, NEW_STATE_DIRNAME),
-    ...LEGACY_STATE_DIRNAMES.map((dir) => path.join(defaultHome, dir)),
+    path.join(/* turbopackIgnore: true */ defaultHome, NEW_STATE_DIRNAME),
+    ...LEGACY_STATE_DIRNAMES.map((dir) => path.join(/* turbopackIgnore: true */ defaultHome, dir)),
   ];
   for (const dir of defaultDirs) {
-    candidates.push(path.join(dir, CONFIG_FILENAME));
-    candidates.push(...LEGACY_CONFIG_FILENAMES.map((name) => path.join(dir, name)));
+    candidates.push(path.join(/* turbopackIgnore: true */ dir, CONFIG_FILENAME));
+    candidates.push(...LEGACY_CONFIG_FILENAMES.map((name) => path.join(/* turbopackIgnore: true */ dir, name)));
   }
   return candidates;
 };

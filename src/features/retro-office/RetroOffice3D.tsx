@@ -789,21 +789,21 @@ const ReadOnlyFurnitureClone = memo(function ReadOnlyFurnitureClone({
 
 function AdaptiveDprController() {
   const { gl, setDpr } = useThree();
-  const currentDprRef = useRef(1.25);
+  const currentDprRef = useRef(1);
   const frameCounterRef = useRef(0);
   const avgDeltaRef = useRef(1 / 60);
 
   useEffect(() => {
-    const initialDpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    const initialDpr = Math.min(window.devicePixelRatio || 1, 1.25);
     currentDprRef.current = initialDpr;
     setDpr(initialDpr);
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible") {
-        currentDprRef.current = 0.85;
-        setDpr(0.85);
+        currentDprRef.current = 0.75;
+        setDpr(0.75);
         return;
       }
-      const restoredDpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      const restoredDpr = Math.min(window.devicePixelRatio || 1, 1.25);
       currentDprRef.current = restoredDpr;
       setDpr(restoredDpr);
     };
@@ -820,8 +820,8 @@ function AdaptiveDprController() {
     if (frameCounterRef.current < 45) return;
     frameCounterRef.current = 0;
 
-    const maxDpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    const minDpr = 0.85;
+    const maxDpr = Math.min(window.devicePixelRatio || 1, 1.25);
+    const minDpr = 0.75;
     let nextDpr = currentDprRef.current;
     if (avgDeltaRef.current > 1 / 42) {
       nextDpr = Math.max(minDpr, currentDprRef.current - 0.1);
@@ -833,6 +833,45 @@ function AdaptiveDprController() {
     setDpr(Number(nextDpr.toFixed(2)));
     gl.info.reset();
   });
+
+  return null;
+}
+
+function WebGlContextRecovery({
+  onContextLostChange,
+}: {
+  onContextLostChange: (lost: boolean) => void;
+}) {
+  const { gl, invalidate, setDpr } = useThree();
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      onContextLostChange(true);
+      console.warn("[claw3d] WebGL context lost; waiting for browser restore.");
+    };
+    const handleContextRestored = () => {
+      const restoredDpr = Math.min(window.devicePixelRatio || 1, 1);
+      gl.setPixelRatio(restoredDpr);
+      gl.info.reset();
+      setDpr(restoredDpr);
+      onContextLostChange(false);
+      invalidate();
+      console.info("[claw3d] WebGL context restored.");
+    };
+
+    canvas.addEventListener("webglcontextlost", handleContextLost, false);
+    canvas.addEventListener("webglcontextrestored", handleContextRestored, false);
+    return () => {
+      canvas.removeEventListener("webglcontextlost", handleContextLost, false);
+      canvas.removeEventListener(
+        "webglcontextrestored",
+        handleContextRestored,
+        false,
+      );
+    };
+  }, [gl, invalidate, onContextLostChange, setDpr]);
 
   return null;
 }
@@ -2709,12 +2748,11 @@ export function RetroOffice3D({
     () =>
       [
         remoteOfficeEnabled ? "remote" : "local",
-        gatewayStatus ?? "unknown",
-        String(agents.length),
         String(officeCenterSignal),
       ].join(":"),
-    [agents.length, gatewayStatus, officeCenterSignal, remoteOfficeEnabled],
+    [officeCenterSignal, remoteOfficeEnabled],
   );
+  const [webglContextLost, setWebglContextLost] = useState(false);
   // New Idea 7: heatmap mode.
   const [heatmapMode, setHeatmapMode] = useState(false);
   const [trailMode, setTrailMode] = useState(false);
@@ -5256,15 +5294,19 @@ export function RetroOffice3D({
           <Canvas
             key={canvasResetKey}
             orthographic
-            dpr={[0.85, 1.5]}
+            dpr={[0.75, 1.25]}
             camera={{
               position: CAM_POS,
               zoom: cameraZoom,
               near: 0.1,
               far: 100,
             }}
-            shadows={{ type: THREE.PCFShadowMap }}
-            gl={{ antialias: true, powerPreference: "high-performance" }}
+            shadows={{ type: THREE.BasicShadowMap }}
+            gl={{
+              antialias: false,
+              failIfMajorPerformanceCaveat: false,
+              powerPreference: "default",
+            }}
             style={{ width: "100%", height: "100%" }}
             onPointerUp={() => {
               if (drag.kind === "moving") setDrag({ kind: "idle" });
@@ -5272,6 +5314,9 @@ export function RetroOffice3D({
           >
             {/* Ensure camera looks at the active office target after mount. */}
             <CameraRig target={cameraTarget} />
+            <WebGlContextRecovery
+              onContextLostChange={setWebglContextLost}
+            />
             <AdaptiveDprController />
 
             {/* Orbit / pan / zoom controls — disabled while follow cam is active or while editing furniture. */}
@@ -5901,6 +5946,12 @@ export function RetroOffice3D({
           </Canvas>
         ) : null}
       </div>
+
+      {webglContextLost && !immersiveOverlayActive ? (
+        <div className="pointer-events-none absolute bottom-3 left-3 z-30 rounded-md border border-amber-500/30 bg-[#120d08]/90 px-3 py-2 text-[11px] text-amber-100 shadow-lg backdrop-blur-sm">
+          3D renderer herstelt...
+        </div>
+      ) : null}
 
       {/* New Idea 2: Camera preset buttons — top left. */}
       {!readOnly && !immersiveOverlayActive ? (

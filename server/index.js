@@ -20,6 +20,24 @@ const resolvePathname = (url) => {
   return (idx === -1 ? raw : raw.slice(0, idx)) || "/";
 };
 
+const handleHealthRequest = (req, res) => {
+  const pathname = resolvePathname(req.url);
+  if (pathname !== "/api/health" && pathname !== "/health") return false;
+
+  const body = JSON.stringify({
+    ok: true,
+    service: "hermes-office",
+    uptimeSec: Math.round(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
+  res.statusCode = 200;
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Length", Buffer.byteLength(body));
+  res.end(body);
+  return true;
+};
+
 const CERT_DIR = require("node:path").join(__dirname, "..", ".certs");
 const CERT_PATH = require("node:path").join(CERT_DIR, "localhost.crt");
 const KEY_PATH = require("node:path").join(CERT_DIR, "localhost.key");
@@ -117,10 +135,12 @@ async function main() {
   const createServer = () =>
     useHttps
       ? https.createServer(httpsCert, (req, res) => {
+          if (handleHealthRequest(req, res)) return;
           if (accessGate.handleHttp(req, res)) return;
           handle(req, res);
         })
       : http.createServer((req, res) => {
+          if (handleHealthRequest(req, res)) return;
           if (accessGate.handleHttp(req, res)) return;
           handle(req, res);
         });
@@ -129,13 +149,6 @@ async function main() {
 
   const attachUpgradeHandlers = (server) => {
     server.on("upgrade", handleServerUpgrade);
-    server.on("newListener", (eventName, listener) => {
-      if (eventName !== "upgrade") return;
-      if (listener === handleServerUpgrade) return;
-      process.nextTick(() => {
-        server.removeListener("upgrade", listener);
-      });
-    });
   };
 
   for (const server of servers) {

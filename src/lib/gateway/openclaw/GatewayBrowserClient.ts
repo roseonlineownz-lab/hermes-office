@@ -644,6 +644,8 @@ export class GatewayBrowserClient {
         const nonce = payload && typeof payload.nonce === "string" ? payload.nonce : null;
         if (nonce) {
           this.connectNonce = nonce;
+        }
+        if (nonce || this.opts.disableDeviceAuth) {
           void this.sendConnect();
         }
         return;

@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 const securityHeaders = [
@@ -11,7 +12,7 @@ const securityHeaders = [
       "img-src 'self' data: blob: http: https:",
       "font-src 'self' data: https:",
       "style-src 'self' 'unsafe-inline' https:",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:",
       "connect-src 'self' ws: wss: http: https:",
       "media-src 'self' blob: data: http: https:",
       "worker-src 'self' blob:",
@@ -33,7 +34,7 @@ const securityHeaders = [
   },
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(self), geolocation=(), browsing-topics=()",
+    value: "camera=(), microphone=(self), geolocation=()",
   },
   {
     key: "Cross-Origin-Resource-Policy",
@@ -49,6 +50,7 @@ if (process.env.NODE_ENV === "production") {
 }
 
 const nextConfig: NextConfig = {
+  outputFileTracingRoot: path.resolve(__dirname),
   async headers() {
     return [
       {

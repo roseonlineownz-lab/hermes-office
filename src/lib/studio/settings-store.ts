@@ -187,22 +187,30 @@ export const loadStudioSettings = (): StudioSettings => {
     }
   }
 
-  if (!settings.gateway?.token) {
-    const gateway = loadLocalGatewayDefaults();
-    if (gateway) {
-      return {
-        ...settings,
-        gateway: settings.gateway?.url?.trim()
-          ? {
-              url: settings.gateway.url.trim(),
-              token: gateway.token,
-              adapterType: settings.gateway.adapterType,
-            }
-          : gateway,
-      };
-    }
+  const gatewayDefaults = loadLocalGatewayDefaults();
+  if (!settings.gateway) {
+    return gatewayDefaults ? { ...settings, gateway: gatewayDefaults } : settings;
   }
-  return settings;
+  if (!gatewayDefaults) return settings;
+
+  if (settings.gateway.adapterType === "openclaw" && !settings.gateway.token) {
+    return {
+      ...settings,
+      gateway: mergeGatewayProfiles(
+        {
+          ...settings.gateway,
+          url: settings.gateway.url.trim() || gatewayDefaults.url,
+          token: gatewayDefaults.token,
+        },
+        gatewayDefaults
+      ),
+    };
+  }
+
+  return {
+    ...settings,
+    gateway: mergeGatewayProfiles(settings.gateway, gatewayDefaults),
+  };
 };
 
 export const saveStudioSettings = (next: StudioSettings) => {

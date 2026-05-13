@@ -16,6 +16,8 @@ const parseCookies = (header) => {
   return out;
 };
 
+const ACCESS_QUERY_KEYS = ["studio_access", "studio_token", "token"];
+
 /** Constant-time string comparison to prevent timing attacks. */
 const safeCompare = (a, b) => {
   if (typeof a !== "string" || typeof b !== "string") return false;
@@ -27,6 +29,29 @@ const safeCompare = (a, b) => {
     return false;
   }
   return crypto.timingSafeEqual(bufA, bufB);
+};
+
+const resolveRequestUrl = (req) => {
+  const host = req.headers?.host || "localhost";
+  return new URL(req.url || "/", `http://${host}`);
+};
+
+const buildAccessCookie = (req, cookieName, token) => {
+  const forwardedProto = String(req.headers?.["x-forwarded-proto"] || "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+  const secure = Boolean(req.socket?.encrypted) || forwardedProto === "https";
+  return [
+    `${cookieName}=${encodeURIComponent(token)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=31536000",
+    secure ? "Secure" : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
 };
 
 /** Simple in-memory rate limiter for auth attempts. */
@@ -85,8 +110,53 @@ function createAccessGate(options) {
     return { authorized: false, limited: rateLimiter.isLimited(ip) };
   };
 
+  const maybeGrantFromQuery = (req, res) => {
+    let parsed;
+    try {
+      parsed = resolveRequestUrl(req);
+    } catch {
+      return false;
+    }
+
+    // Auto-login for /stark-login: grant access without query params
+    const isStarkLogin = String(parsed.pathname).startsWith("/stark-login");
+    if (isStarkLogin) {
+      const ip = req.socket?.remoteAddress || "unknown";
+      rateLimiter.reset(ip);
+      res.statusCode = 303;
+      res.setHeader("Set-Cookie", buildAccessCookie(req, cookieName, token));
+      res.setHeader("Location", "/office");
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Content-Type", "text/plain");
+      res.end("Studio access granted via /stark-login.");
+      return true;
+    }
+
+    const provided = ACCESS_QUERY_KEYS
+      .map((key) => parsed.searchParams.get(key))
+      .find((value) => typeof value === "string" && value.length > 0);
+    if (!provided || !safeCompare(provided, token)) {
+      return false;
+    }
+
+    for (const key of ACCESS_QUERY_KEYS) {
+      parsed.searchParams.delete(key);
+    }
+    const location = `${parsed.pathname}${parsed.search}${parsed.hash}` || "/";
+    const ip = req.socket?.remoteAddress || "unknown";
+    rateLimiter.reset(ip);
+    res.statusCode = 303;
+    res.setHeader("Set-Cookie", buildAccessCookie(req, cookieName, token));
+    res.setHeader("Location", location);
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Type", "text/plain");
+    res.end("Studio access granted.");
+    return true;
+  };
+
   const handleHttp = (req, res) => {
     if (!enabled) return false;
+    if (maybeGrantFromQuery(req, res)) return true;
     const auth = getAuthState(req);
     if (!auth.authorized) {
       const statusCode = auth.limited ? 429 : 401;

@@ -725,22 +725,35 @@ export const useGatewayConnection = (
   const [localGatewayDefaults, setLocalGatewayDefaults] = useState<StudioGatewaySettings | null>(
     null
   );
+  const adapterProfilesRef = useRef(adapterProfiles);
+  const localGatewayDefaultsRef = useRef(localGatewayDefaults);
   const [status, setStatus] = useState<GatewayStatus>("disconnected");
   const [error, setError] = useState<string | null>(null);
   const [connectErrorCode, setConnectErrorCode] = useState<string | null>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [hasLastKnownGoodState, setHasLastKnownGoodState] = useState(false);
+
+  useEffect(() => {
+    adapterProfilesRef.current = adapterProfiles;
+  }, [adapterProfiles]);
+
+  useEffect(() => {
+    localGatewayDefaultsRef.current = localGatewayDefaults;
+  }, [localGatewayDefaults]);
+
   const setSelectedAdapterType = useCallback(
     (value: StudioGatewayAdapterType) => {
       setSelectedAdapterTypeState(value);
+      const profiles = adapterProfilesRef.current;
+      const defaults = localGatewayDefaultsRef.current;
       const profile =
-        adapterProfiles[value] ?? resolveDefaultGatewayProfile(value, localGatewayDefaults);
+        profiles[value] ?? resolveDefaultGatewayProfile(value, defaults);
       setGatewayUrl(profile.url);
       setToken(profile.token);
       setError(null);
       setConnectErrorCode(null);
     },
-    [adapterProfiles, localGatewayDefaults]
+    []
   );
 
   useEffect(() => {
@@ -953,7 +966,7 @@ export const useGatewayConnection = (
             token,
             authScopeKey: gatewayUrl,
             clientName: resolveGatewayClientName(selectedAdapterType, gatewayUrl),
-            disableDeviceAuth: selectedAdapterType !== "openclaw",
+            disableDeviceAuth: true,
           });
           lastError = null;
           break;
@@ -977,10 +990,12 @@ export const useGatewayConnection = (
       if (lastError) {
         throw lastError;
       }
-      await ensureGatewayReloadModeHotForLocalStudio({
-        client,
-        upstreamGatewayUrl: gatewayUrl,
-      });
+      if (selectedAdapterType === "openclaw") {
+        await ensureGatewayReloadModeHotForLocalStudio({
+          client,
+          upstreamGatewayUrl: gatewayUrl,
+        });
+      }
       const hello = client.getLastHello();
       const nextDetectedAdapterType =
         hello?.adapterType === "demo" ||

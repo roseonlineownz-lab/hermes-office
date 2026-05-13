@@ -94,6 +94,40 @@ describe("GatewayBrowserClient", () => {
     expect(frame.params?.client?.id).toBe("openclaw-control-ui");
   });
 
+  it("sends connect for tokenless adapter challenges when device auth is disabled", async () => {
+    const client = new GatewayBrowserClient({
+      url: "ws://example.com",
+      disableDeviceAuth: true,
+    });
+    client.start();
+
+    const ws = MockWebSocket.instances[0];
+    if (!ws) {
+      throw new Error("WebSocket not created");
+    }
+
+    ws.onopen?.();
+
+    expect(MockWebSocket.sent).toHaveLength(0);
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: "event",
+        event: "connect.challenge",
+        payload: {},
+      }),
+    } as MessageEvent);
+
+    await vi.runAllTicks();
+
+    expect(MockWebSocket.sent).toHaveLength(1);
+    const frame = JSON.parse(MockWebSocket.sent[0] ?? "{}");
+    expect(frame.type).toBe("req");
+    expect(frame.method).toBe("connect");
+    expect(frame.params?.auth).toBeUndefined();
+    expect(frame.params?.device).toBeUndefined();
+  });
+
   it("truncates connect-failed close reason to websocket limit", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const client = new GatewayBrowserClient({ url: "ws://example.com", token: "secret" });

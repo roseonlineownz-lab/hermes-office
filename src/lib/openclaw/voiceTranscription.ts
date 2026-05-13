@@ -3,10 +3,8 @@ import * as fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 
-const require = createRequire(import.meta.url);
 const CONFIGURED_OPENCLAW_PACKAGE_ROOT = process.env.OPENCLAW_PACKAGE_ROOT?.trim() ?? "";
 
 const OPENCLAW_DIST_INDEX_RELATIVE_PATH = path.join("dist", "index.js");
@@ -101,15 +99,6 @@ const nativeImport = new Function(
   "return import(specifier);",
 ) as (specifier: string) => Promise<unknown>;
 
-const resolveInstalledOpenClawPackageRoot = (): string | null => {
-  try {
-    const resolvedEntry = require.resolve("openclaw");
-    return path.dirname(path.dirname(resolvedEntry));
-  } catch {
-    return null;
-  }
-};
-
 export const normalizeVoiceMimeType = (value: string | null | undefined): string => {
   const trimmed = value?.trim().toLowerCase() ?? "";
   if (!trimmed) return DEFAULT_VOICE_MIME;
@@ -195,14 +184,8 @@ const resolveOpenClawPackageRoot = (): string => {
     throw new Error("OPENCLAW_PACKAGE_ROOT does not point to a valid OpenClaw installation.");
   }
 
-  const installedCandidate = resolveInstalledOpenClawPackageRoot();
-  if (installedCandidate) {
-    const indexPath = path.join(installedCandidate, OPENCLAW_DIST_INDEX_RELATIVE_PATH);
-    if (fs.existsSync(indexPath)) return installedCandidate;
-  }
-
   throw new Error(
-    "OpenClaw could not be resolved from the current Node runtime. Install the `openclaw` package or set OPENCLAW_PACKAGE_ROOT.",
+    "OpenClaw voice transcription requires OPENCLAW_PACKAGE_ROOT to point to an OpenClaw dist build.",
   );
 };
 

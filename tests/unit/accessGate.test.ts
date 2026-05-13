@@ -46,6 +46,46 @@ describe("createAccessGate", () => {
     ).toBe(true);
   });
 
+  it("sets the access cookie and redirects when a valid token query is provided", async () => {
+    const { createAccessGate } = await import("../../server/access-gate");
+    const gate = createAccessGate({ token: "abc" });
+
+    let statusCode = 0;
+    let body = "";
+    const headers: Record<string, string> = {};
+    const res = {
+      setHeader: (name: string, value: string) => {
+        headers[name] = value;
+      },
+      end: (value?: string) => {
+        body = value ?? "";
+      },
+      get statusCode() {
+        return statusCode;
+      },
+      set statusCode(value: number) {
+        statusCode = value;
+      },
+    };
+
+    const handled = gate.handleHttp(
+      {
+        url: "/office?token=abc&view=desktop",
+        headers: { host: "localhost:9120" },
+        socket: { remoteAddress: "127.0.0.1" },
+      },
+      res
+    );
+
+    expect(handled).toBe(true);
+    expect(statusCode).toBe(303);
+    expect(headers["Set-Cookie"]).toContain("studio_access=abc");
+    expect(headers["Set-Cookie"]).toContain("HttpOnly");
+    expect(headers.Location).toBe("/office?view=desktop");
+    expect(headers["Cache-Control"]).toBe("no-store");
+    expect(body).toBe("Studio access granted.");
+  });
+
   it("returns 429 after repeated failed attempts", async () => {
     const { createAccessGate } = await import("../../server/access-gate");
     const gate = createAccessGate({ token: "abc" });

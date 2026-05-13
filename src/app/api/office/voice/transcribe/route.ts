@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { transcribeVoiceWithOpenClaw } from "@/lib/openclaw/voiceTranscription";
+import { transcribeVoiceWithLocalStt } from "@/lib/voice/localTranscription";
 
 export const runtime = "nodejs";
 
@@ -71,17 +72,26 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await transcribeVoiceWithOpenClaw({
-      buffer: Buffer.from(arrayBuffer),
-      fileName: audioFile.name,
-      mimeType: audioFile.type,
-    });
+    const voiceBuffer = Buffer.from(arrayBuffer);
+    const provider = process.env.CLAW3D_VOICE_TRANSCRIPTION_PROVIDER?.trim().toLowerCase() || "local";
+    const result =
+      provider === "openclaw"
+        ? await transcribeVoiceWithOpenClaw({
+            buffer: voiceBuffer,
+            fileName: audioFile.name,
+            mimeType: audioFile.type,
+          })
+        : await transcribeVoiceWithLocalStt({
+            buffer: voiceBuffer,
+            fileName: audioFile.name,
+            mimeType: audioFile.type,
+          });
 
     return NextResponse.json({
       transcript: result.transcript,
       provider: result.provider,
       model: result.model,
-      decision: result.decision,
+      decision: "decision" in result ? result.decision : null,
       ignored: result.ignored,
     });
   } catch (error) {
