@@ -1,9 +1,25 @@
 import type { Page, Route, Request } from "@playwright/test";
 import type { AgentAvatarProfile } from "@/lib/avatars/profile";
+import type {
+  StudioGatewayAdapterType,
+  StudioGatewayProfilePublic,
+} from "@/lib/studio/settings";
 
 export type StudioSettingsFixture = {
   version: 1;
-  gateway: { url: string; token: string } | null;
+  gateway:
+    | {
+        url: string;
+        token: string;
+        adapterType?: StudioGatewayAdapterType;
+        profiles?: Partial<Record<StudioGatewayAdapterType, StudioGatewayProfilePublic>>;
+        lastKnownGood?: {
+          url: string;
+          token: string;
+          adapterType: StudioGatewayAdapterType;
+        };
+      }
+    | null;
   focused: Record<string, { mode: "focused"; filter: string; selectedAgentId: string | null }>;
   avatars: Record<string, Record<string, AgentAvatarProfile>>;
   taskBoard?: Record<

@@ -603,6 +603,7 @@ export type GatewayConnectionState = {
   detectedAdapterType: StudioGatewayAdapterType | null;
   activeAdapterType: StudioGatewayAdapterType;
   localGatewayDefaults: StudioGatewaySettings | null;
+  hasLastKnownGood: boolean;
   error: string | null;
   connectPromptReady: boolean;
   shouldPromptForConnect: boolean;
@@ -746,8 +747,11 @@ export const useGatewayConnection = (
       setSelectedAdapterTypeState(value);
       const profiles = adapterProfilesRef.current;
       const defaults = localGatewayDefaultsRef.current;
+      const loadedProfiles = loadedGatewaySettings.current?.profiles;
       const profile =
-        profiles[value] ?? resolveDefaultGatewayProfile(value, defaults);
+        profiles[value] ??
+        loadedProfiles?.[value] ??
+        resolveDefaultGatewayProfile(value, defaults);
       setGatewayUrl(profile.url);
       setToken(profile.token);
       setError(null);
@@ -854,6 +858,8 @@ export const useGatewayConnection = (
           profiles: mergedProfiles,
           hasLastKnownGood: Boolean(lastKnownGoodForSelectedAdapter?.url),
         };
+        adapterProfilesRef.current = mergedProfiles;
+        localGatewayDefaultsRef.current = normalizedDefaults;
         setGatewayUrl(nextGatewayUrl);
         setToken(nextToken);
         setSelectedAdapterTypeState(nextAdapterType);
@@ -1171,15 +1177,18 @@ export const useGatewayConnection = (
     if (!localGatewayDefaults) {
       return;
     }
-    setGatewayUrl(localGatewayDefaults.url);
-    setToken(localGatewayDefaults.token);
-    setAdapterProfiles((current) => ({
-      ...current,
+    const nextProfiles = {
+      ...adapterProfilesRef.current,
       [localGatewayDefaults.adapterType]: {
         url: localGatewayDefaults.url,
         token: localGatewayDefaults.token,
       },
-    }));
+    };
+    adapterProfilesRef.current = nextProfiles;
+    localGatewayDefaultsRef.current = localGatewayDefaults;
+    setGatewayUrl(localGatewayDefaults.url);
+    setToken(localGatewayDefaults.token);
+    setAdapterProfiles(nextProfiles);
     setSelectedAdapterTypeState(localGatewayDefaults.adapterType);
     setError(null);
     setConnectErrorCode(null);
@@ -1226,6 +1235,7 @@ export const useGatewayConnection = (
     detectedAdapterType,
     activeAdapterType,
     localGatewayDefaults,
+    hasLastKnownGood: hasLastKnownGoodState,
     error,
     connectPromptReady,
     shouldPromptForConnect,

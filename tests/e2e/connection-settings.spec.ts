@@ -1,8 +1,25 @@
 import { expect, test } from "@playwright/test";
 import { stubStudioRoute } from "./helpers/studioRoute";
 
+const CONNECTED_GATEWAY = {
+  url: "ws://localhost:18789",
+  token: "",
+  adapterType: "hermes" as const,
+  lastKnownGood: {
+    url: "ws://localhost:18789",
+    token: "",
+    adapterType: "hermes" as const,
+  },
+};
+
 test("voice reply settings persist to the studio settings API", async ({ page }) => {
-  await stubStudioRoute(page);
+  await stubStudioRoute(page, {
+    version: 1,
+    gateway: CONNECTED_GATEWAY,
+    focused: {},
+    avatars: {},
+    taskBoard: {},
+  });
 
   await page.goto("/");
   await page.getByTitle("Voice reply settings").click();

@@ -39,3 +39,9 @@ Claw3D is a Next.js 16 frontend (TypeScript, React 19, Three.js, Phaser) for Ope
 - The `openclaw` npm package is not a dependency of this repo. The build warning about it is harmless.
 - `npm run studio:setup` is interactive (TTY prompts) — avoid running it in non-interactive cloud environments.
 - Vitest runs in watch mode by default; always pass `--run` for CI/cloud agent use.
+
+### Local SOUL.md guidance
+
+- Do not paste the full Hermes `SOUL.md` into this repository's `AGENTS.md`; keep identity/persona in `~/.hermes/SOUL.md` and load it only when explicitly relevant.
+- Repo-specific build, test, gateway, and Office implementation rules belong in this `AGENTS.md`.
+- If a task needs Hermes persona context, summarize only the relevant `SOUL.md` points instead of copying the full file into prompts, tests, or docs.

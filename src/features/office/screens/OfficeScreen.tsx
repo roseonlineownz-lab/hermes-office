@@ -849,6 +849,7 @@ export function OfficeScreen({
     selectedAdapterType,
     activeAdapterType,
     localGatewayDefaults,
+    hasLastKnownGood,
     error: gatewayError,
     connect,
     disconnect,
@@ -4172,10 +4173,17 @@ export function OfficeScreen({
         !shouldPromptForConnect &&
         ((!didAttemptGatewayConnect && showDelayedGatewayLoadingOverlay) ||
           (status === "connecting" && showDelayedGatewayLoadingOverlay))));
+  const allowDegradedGatewayInteraction =
+    status === "disconnected" &&
+    !agentsLoaded &&
+    hasLastKnownGood &&
+    gatewayUrl.trim().length > 0 &&
+    Boolean(gatewayError);
   const showGatewayConnectOverlay =
     connectPromptReady &&
     status === "disconnected" &&
     !agentsLoaded &&
+    !allowDegradedGatewayInteraction &&
     (shouldPromptForConnect || showDelayedGatewayConnectOverlay);
 
   const runningCount = state.agents.filter(
@@ -4234,6 +4242,24 @@ export function OfficeScreen({
               onConnect={() => void connect()}
             />
           </div>
+        </div>
+      ) : null}
+      {allowDegradedGatewayInteraction ? (
+        <div
+          className="pointer-events-auto absolute left-1/2 top-4 z-50 flex w-[min(920px,calc(100%-2rem))] -translate-x-1/2 items-center justify-between gap-3 rounded-xl border border-amber-500/45 bg-[#211305]/94 px-4 py-3 text-sm text-amber-50 shadow-2xl"
+          role="status"
+          aria-label="Gateway degraded mode"
+        >
+          <span>
+            Gateway closed; cached Office state remains usable while actions sync when the runtime returns.
+          </span>
+          <button
+            type="button"
+            className="rounded-lg border border-amber-300/50 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-amber-100 transition hover:bg-amber-300/10"
+            onClick={() => void connect()}
+          >
+            Reconnect
+          </button>
         </div>
       ) : null}
       <section className="relative h-full min-h-0 min-w-0 overflow-hidden">
