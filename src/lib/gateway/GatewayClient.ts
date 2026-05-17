@@ -836,8 +836,16 @@ export const useGatewayConnection = (
 
   useEffect(() => {
     return client.onStatus((nextStatus) => {
-      if (selectedAdapterType === "custom") {
-        gatewayDebugLog("status:ignored-custom", { nextStatus });
+      const customRuntimeOwnsStatus =
+        selectedAdapterType === "custom" &&
+        status !== "connecting" &&
+        (!detectedAdapterType || detectedAdapterType === "custom");
+      if (customRuntimeOwnsStatus) {
+        gatewayDebugLog("status:ignored-custom", {
+          nextStatus,
+          detectedAdapterType,
+          status,
+        });
         return;
       }
       gatewayDebugLog("status", { nextStatus });
@@ -851,7 +859,7 @@ export const useGatewayConnection = (
         }
       }
     });
-  }, [client, selectedAdapterType]);
+  }, [client, detectedAdapterType, selectedAdapterType, status]);
 
   useEffect(() => {
     return () => {

@@ -11,6 +11,7 @@ describe("/api/runtime/custom route", () => {
   });
 
   it("blocks custom runtime proxying in production when no allowlist is configured", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     Object.assign(process.env, { NODE_ENV: "production" });
     delete process.env.CUSTOM_RUNTIME_ALLOWLIST;
     delete process.env.UPSTREAM_ALLOWLIST;
@@ -32,6 +33,7 @@ describe("/api/runtime/custom route", () => {
     await expect(response.json()).resolves.toMatchObject({
       error: "runtimeUrl is not in the allowed hosts list.",
     });
+    expect(consoleError).toHaveBeenCalled();
   });
 
   it("allows only listed hosts when a custom runtime allowlist is configured", async () => {
@@ -67,6 +69,7 @@ describe("/api/runtime/custom route", () => {
   });
 
   it("returns 400 for malformed JSON request bodies", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     Object.assign(process.env, { NODE_ENV: "production" });
 
     const { POST } = await import("@/app/api/runtime/custom/route");
@@ -82,5 +85,6 @@ describe("/api/runtime/custom route", () => {
     await expect(response.json()).resolves.toMatchObject({
       error: "Invalid JSON request body.",
     });
+    expect(consoleError).toHaveBeenCalled();
   });
 });
