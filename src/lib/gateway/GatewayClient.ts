@@ -121,8 +121,7 @@ const INITIAL_CONNECT_RETRY_DELAY_MS = 1_200;
 const OPENCLAW_CONTROL_UI_CLIENT_ID = "openclaw-control-ui";
 const OPENCLAW_WEBCHAT_UI_CLIENT_ID = "webchat-ui";
 
-const isAutoManagedAdapter = (adapterType: StudioGatewayAdapterType) =>
-  adapterType !== "custom";
+const isAutoManagedAdapter = (_adapterType: StudioGatewayAdapterType) => true;
 
 export const resolveGatewayClientName = (
   adapterType: StudioGatewayAdapterType,
@@ -866,6 +865,7 @@ export const useGatewayConnection = (
         setAdapterProfiles(mergedProfiles);
         setHasLastKnownGoodState(Boolean(lastKnownGoodForSelectedAdapter?.url));
       } catch (err) {
+        console.error("[GatewayClient] loadSettings error:", err);
         if (!cancelled) {
           const message = err instanceof Error ? err.message : "Failed to load gateway settings.";
           setError(message);
@@ -1039,7 +1039,6 @@ export const useGatewayConnection = (
   useEffect(() => {
     if (didAutoConnect.current) return;
     if (!settingsLoaded) return;
-    if (!hasLastKnownGoodState) return;
     if (!gatewayUrl.trim()) return;
     if (!isAutoManagedAdapter(selectedAdapterType)) return;
     didAutoConnect.current = true;
@@ -1219,8 +1218,8 @@ export const useGatewayConnection = (
   const shouldPromptForConnect =
     settingsLoaded &&
     status !== "connected" &&
-    (selectedAdapterType === "custom" ||
-      !hasLastKnownGoodState ||
+    ((selectedAdapterType === "custom" && !gatewayUrl.trim()) ||
+      (selectedAdapterType === "openclaw" && !hasLastKnownGoodState) ||
       !gatewayUrl.trim() ||
       (selectedAdapterType === "openclaw" && !token.trim()) ||
       wasManualDisconnectRef.current ||

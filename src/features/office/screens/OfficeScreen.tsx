@@ -828,10 +828,57 @@ const inferRunningFromAgentSessions = async (params: {
 
 type OfficeScreenProps = {
   showOpenClawConsole?: boolean;
+  initialLocalRuntimeState?: LocalClaw3dRuntimeState | null;
+};
+
+type LocalClaw3dRuntimeAgent = {
+  name?: string | null;
+  status?: string | null;
+  room?: string | null;
+  task?: string | null;
+  model?: string | null;
+};
+
+type LocalClaw3dRuntimeState = {
+  ok?: boolean;
+  runtime?: {
+    name?: string | null;
+    active_model?: string | null;
+  } | null;
+  agents?: Record<string, LocalClaw3dRuntimeAgent> | null;
+};
+
+const mapLocalRuntimeStateToOfficeAgents = (
+  payload: LocalClaw3dRuntimeState | null | undefined,
+): OfficeAgent[] => {
+  return Object.entries(payload?.agents ?? {}).map(([agentId, agent]) => ({
+    id: agentId,
+    name: agent?.name?.trim() || agentId,
+    subtitle: agent?.room?.trim() || agent?.task?.trim() || null,
+    status: (() => {
+      const normalized = normalizeLocalClaw3dAgentStatus(agent?.status);
+      return normalized === "running" ? "working" : normalized;
+    })(),
+    color: stringToColor(agentId),
+    item: getDeterministicItem(agentId),
+    avatarProfile: null,
+  }));
+};
+
+const normalizeLocalClaw3dAgentStatus = (
+  status: string | null | undefined,
+): AgentState["status"] => {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  if (normalized === "error" || normalized === "failed") return "error";
+  if (normalized === "active" || normalized === "working" || normalized === "running") {
+    return "running";
+  }
+  return "idle";
 };
 
 export function OfficeScreen({
   showOpenClawConsole = true,
+  initialLocalRuntimeState = null,
 }: OfficeScreenProps) {
   const searchParams = useSearchParams();
   const debugEnabled = searchParams.get("officeDebug") === "1";
@@ -867,7 +914,15 @@ export function OfficeScreen({
   const runtimeSupportsRunLifecycle = supportsCapability("runtime-agent-events");
   const { state, dispatch, hydrateAgents, setError, setLoading } =
     useAgentStore();
-  const [agentsLoaded, setAgentsLoaded] = useState(false);
+  const initialLocalOfficeAgents = useMemo(
+    () => mapLocalRuntimeStateToOfficeAgents(initialLocalRuntimeState),
+    [initialLocalRuntimeState],
+  );
+  const [agentsLoaded, setAgentsLoaded] = useState(
+    () => initialLocalOfficeAgents.length > 0,
+  );
+  const [localClaw3dOfficeAgents, setLocalClaw3dOfficeAgents] =
+    useState<OfficeAgent[]>(() => initialLocalOfficeAgents);
   const [didAttemptGatewayConnect, setDidAttemptGatewayConnect] = useState(false);
   const [showDelayedGatewayLoadingOverlay, setShowDelayedGatewayLoadingOverlay] =
     useState(false);
@@ -1283,6 +1338,92 @@ export function OfficeScreen({
       setDidAttemptGatewayConnect(true);
     }
   }, [gatewayError]);
+
+  useEffect(() => {
+    if (selectedAdapterType !== "custom") return;
+    if (!gatewayUrl.trim()) return;
+    if (agentsLoaded && state.agents.length > 0) return;
+    let cancelled = false;
+    const timeoutId = window.setTimeout(() => {
+      const controller = new AbortController();
+      const normalizedBaseUrl = gatewayUrl.replace(/^ws:/, "http:").replace(/^wss:/, "https:").replace(/\/+$/, "");
+      fetch(`${normalizedBaseUrl}/state`, {
+        cache: "no-store",
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`Local Claw3D runtime state failed: HTTP ${response.status}`);
+          }
+          return (await response.json()) as LocalClaw3dRuntimeState;
+        })
+        .then((payload) => {
+          if (cancelled) return;
+          const runtimeName = payload.runtime?.name?.trim() || "NovaMaster Local Claw3D";
+          const agents = Object.entries(payload.agents ?? {}).map(([agentId, agent]) => ({
+            agentId,
+            name: agent?.name?.trim() || agentId,
+            runtimeName,
+            identityName: agent?.name?.trim() || agentId,
+            sessionDisplayName: agent?.task?.trim() || agent?.room?.trim() || agentId,
+            role: agent?.room?.trim() || "agent",
+            sessionKey: `custom:${agentId}:main`,
+            avatarSeed: agentId,
+            model: agent?.model?.trim() || payload.runtime?.active_model?.trim() || null,
+            toolCallingEnabled: true,
+            showThinkingTraces: true,
+          }));
+          if (agents.length === 0) {
+            throw new Error("Local Claw3D runtime returned zero agents.");
+          }
+          setLocalClaw3dOfficeAgents(mapLocalRuntimeStateToOfficeAgents(payload));
+          hydrateAgents(agents, agents[0]?.agentId);
+          for (const [agentId, agent] of Object.entries(payload.agents ?? {})) {
+            dispatch({
+              type: "updateAgent",
+              agentId,
+              patch: {
+                status: normalizeLocalClaw3dAgentStatus(agent?.status),
+                lastResult: agent?.task?.trim() || null,
+              },
+            });
+          }
+          setAgentsLoaded(true);
+          setLoading(false);
+          setError(null);
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          console.error("[Claw3D] local custom runtime hydration failed", error);
+          setLocalClaw3dOfficeAgents([]);
+          setError(error instanceof Error ? error.message : String(error));
+          setLoading(false);
+        });
+      return () => controller.abort();
+    }, 2000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    agentsLoaded,
+    dispatch,
+    gatewayUrl,
+    hydrateAgents,
+    selectedAdapterType,
+    setError,
+    setLoading,
+    state.agents.length,
+  ]);
+
+  useEffect(() => {
+    if (selectedAdapterType !== "custom") return;
+    if (status !== "disconnected") return;
+    if (!gatewayUrl.trim()) return;
+    if (didAttemptGatewayConnect) return;
+    setDidAttemptGatewayConnect(true);
+    void connect();
+  }, [connect, didAttemptGatewayConnect, gatewayUrl, selectedAdapterType, status]);
 
   const loadStudioSettings = useCallback(
     (options?: StudioSettingsLoadOptions) => settingsCoordinator.loadSettings(options),
@@ -3867,9 +4008,18 @@ export function OfficeScreen({
     ? (remoteChatByAgentId[focusedRemoteChatTarget.id] ?? EMPTY_REMOTE_CHAT_SESSION)
     : null;
   const allVisibleAgents = useMemo(
-    () => [...officeAgents, ...remoteOfficeAgents],
-    [officeAgents, remoteOfficeAgents],
+    () => [
+      ...(officeAgents.length > 0 ? officeAgents : localClaw3dOfficeAgents),
+      ...remoteOfficeAgents,
+    ],
+    [localClaw3dOfficeAgents, officeAgents, remoteOfficeAgents],
   );
+  const localRuntimeSnapshotVisible =
+    localClaw3dOfficeAgents.length > 0 && status !== "connected";
+  const visibleGatewayStatus = localRuntimeSnapshotVisible ? "connected" : status;
+  const visibleAdapterType = localRuntimeSnapshotVisible ? "custom" : activeAdapterType;
+  const visibleSelectedAdapterType =
+    localRuntimeSnapshotVisible ? "custom" : selectedAdapterType;
   const remoteOfficeVisible =
     remoteOfficeEnabled &&
     (remoteOfficeSourceKind === "presence_endpoint"
@@ -4168,6 +4318,7 @@ export function OfficeScreen({
 
   const showGatewayLoadingOverlay =
     !agentsLoaded &&
+    localClaw3dOfficeAgents.length === 0 &&
     (!connectPromptReady ||
       (gatewayUrl.trim().length > 0 &&
         !shouldPromptForConnect &&
@@ -4320,8 +4471,8 @@ export function OfficeScreen({
           }}
           gatewayUrl={gatewayUrl}
           gatewayToken={token}
-          selectedAdapterType={selectedAdapterType}
-          activeAdapterType={activeAdapterType}
+          selectedAdapterType={visibleSelectedAdapterType}
+          activeAdapterType={visibleAdapterType}
           onGatewayDisconnect={disconnect}
           onGatewayConnect={() => void connect()}
           onGatewayUrlChange={setGatewayUrl}
@@ -4329,7 +4480,7 @@ export function OfficeScreen({
           onGatewayAdapterTypeChange={setSelectedAdapterType}
           onOpenOnboarding={handleOpenOnboarding}
           feedEvents={feedEvents}
-          gatewayStatus={status}
+          gatewayStatus={visibleGatewayStatus}
           runCountByAgentId={runCountByAgentId}
           lastSeenByAgentId={lastSeenByAgentId}
           streamingTextByAgentId={streamingTextByAgentId}

@@ -70,14 +70,14 @@ else
 fi
 HERMES_API_URL="http://localhost:$HERMES_PORT"
 
-# ── 2. Hermes adapter (WebSocket bridge, default 18789) ──────────────────────
-ADAPTER_PORT=18789
+# ── 2. Hermes adapter (WebSocket bridge, default 18800) ──────────────────────
+ADAPTER_PORT="${HERMES_ADAPTER_PORT:-18800}"
 if ! port_free $ADAPTER_PORT; then
   if port_owned_by $ADAPTER_PORT "node.*hermes-gateway-adapter"; then
     warn "Hermes adapter already running on :$ADAPTER_PORT — reusing."
   else
     ADAPTER_PORT=$(find_free_port $((ADAPTER_PORT + 1)))
-    warn "Port 18789 taken by another process → using :$ADAPTER_PORT for adapter."
+    warn "Port ${HERMES_ADAPTER_PORT:-18800} taken by another process → using :$ADAPTER_PORT for adapter."
     log "Starting Hermes adapter on :$ADAPTER_PORT..."
     cd "$CLAWD3D_DIR"
     nohup env HERMES_ADAPTER_PORT="$ADAPTER_PORT" HERMES_API_URL="$HERMES_API_URL" \

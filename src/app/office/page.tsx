@@ -30,13 +30,29 @@ function OfficeLoadingFallback() {
   );
 }
 
-export default function OfficePage() {
+async function loadInitialLocalRuntimeState() {
+  try {
+    const response = await fetch("http://127.0.0.1:8095/state", {
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+export default async function OfficePage() {
   const showOpenClawConsole = readDebugFlag(process.env.DEBUG);
+  const initialLocalRuntimeState = await loadInitialLocalRuntimeState();
 
   return (
     <AgentStoreProvider>
       <Suspense fallback={<OfficeLoadingFallback />}>
-        <OfficeScreen showOpenClawConsole={showOpenClawConsole} />
+        <OfficeScreen
+          showOpenClawConsole={showOpenClawConsole}
+          initialLocalRuntimeState={initialLocalRuntimeState}
+        />
       </Suspense>
     </AgentStoreProvider>
   );
