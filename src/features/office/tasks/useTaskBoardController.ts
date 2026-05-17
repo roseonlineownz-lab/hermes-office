@@ -876,9 +876,17 @@ export const useTaskBoardController = ({
     setSharedTasksError(null);
     try {
       const tasks = await listSharedTaskRecords();
-      setSharedTasksSupported(true);
-      for (const task of tasks) {
-        applySharedTaskRecord(task);
+      setSharedTasksSupported((current) => (current ? current : true));
+      const cards = tasks.map((task) => {
+        const existing =
+          stateRef.current.cards.find((card) => card.id === task.id) ?? null;
+        return buildCardFromSharedTaskRecord(task, existing);
+      });
+      if (cards.length > 0) {
+        dispatch({ type: "upsertMany", cards });
+        for (const card of cards) {
+          archiveMatchingInferredCards(card);
+        }
       }
     } catch (error) {
       if (error instanceof TaskStoreRequestError && error.status === 404) {
@@ -897,7 +905,7 @@ export const useTaskBoardController = ({
       sharedRefreshInFlightRef.current = false;
       setSharedTasksLoading(false);
     }
-  }, [applySharedTaskRecord, sharedTasksSupported]);
+  }, [archiveMatchingInferredCards, sharedTasksSupported]);
 
   const refreshRemoteTasks = useCallback(async () => {
     if (status !== "connected") {

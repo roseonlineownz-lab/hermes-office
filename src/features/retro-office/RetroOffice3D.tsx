@@ -792,20 +792,26 @@ function AdaptiveDprController() {
   const currentDprRef = useRef(1);
   const frameCounterRef = useRef(0);
   const avgDeltaRef = useRef(1 / 60);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+    const applyDpr = (nextDpr: number) => {
+      const normalizedDpr = Number(nextDpr.toFixed(2));
+      if (Math.abs(normalizedDpr - currentDprRef.current) < 0.001) return;
+      currentDprRef.current = normalizedDpr;
+      setDpr(normalizedDpr);
+    };
     const initialDpr = Math.min(window.devicePixelRatio || 1, 1.25);
-    currentDprRef.current = initialDpr;
-    setDpr(initialDpr);
+    applyDpr(initialDpr);
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible") {
-        currentDprRef.current = 0.75;
-        setDpr(0.75);
+        applyDpr(0.75);
         return;
       }
       const restoredDpr = Math.min(window.devicePixelRatio || 1, 1.25);
-      currentDprRef.current = restoredDpr;
-      setDpr(restoredDpr);
+      applyDpr(restoredDpr);
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
@@ -838,9 +844,11 @@ function AdaptiveDprController() {
 }
 
 function WebGlContextRecovery({
-  onContextLostChange,
+  onContextLost,
+  onContextRestored,
 }: {
-  onContextLostChange: (lost: boolean) => void;
+  onContextLost: () => void;
+  onContextRestored: () => void;
 }) {
   const { gl, invalidate, setDpr } = useThree();
 
@@ -848,7 +856,7 @@ function WebGlContextRecovery({
     const canvas = gl.domElement;
     const handleContextLost = (event: Event) => {
       event.preventDefault();
-      onContextLostChange(true);
+      onContextLost();
       console.warn("[claw3d] WebGL context lost; waiting for browser restore.");
     };
     const handleContextRestored = () => {
@@ -856,7 +864,7 @@ function WebGlContextRecovery({
       gl.setPixelRatio(restoredDpr);
       gl.info.reset();
       setDpr(restoredDpr);
-      onContextLostChange(false);
+      onContextRestored();
       invalidate();
       console.info("[claw3d] WebGL context restored.");
     };
@@ -871,7 +879,7 @@ function WebGlContextRecovery({
         false,
       );
     };
-  }, [gl, invalidate, onContextLostChange, setDpr]);
+  }, [gl, invalidate, onContextLost, onContextRestored, setDpr]);
 
   return null;
 }
@@ -2753,6 +2761,38 @@ export function RetroOffice3D({
     [officeCenterSignal, remoteOfficeEnabled],
   );
   const [webglContextLost, setWebglContextLost] = useState(false);
+  const [webglSafeMode, setWebglSafeMode] = useState(false);
+  const [webglRecoveryNonce, setWebglRecoveryNonce] = useState(0);
+  const webglRecoveryTimerRef = useRef<number | NodeJS.Timeout | null>(null);
+  const handleWebglContextLost = useCallback(() => {
+    if (webglRecoveryTimerRef.current) {
+      window.clearTimeout(webglRecoveryTimerRef.current);
+      webglRecoveryTimerRef.current = null;
+    }
+    setWebglSafeMode(true);
+    setWebglContextLost(true);
+    webglRecoveryTimerRef.current = window.setTimeout(() => {
+      setWebglContextLost(false);
+      setWebglSafeMode(false);
+      setWebglRecoveryNonce((current) => current + 1);
+    }, 300);
+  }, []);
+  const handleWebglContextRestored = useCallback(() => {
+    if (webglRecoveryTimerRef.current) {
+      window.clearTimeout(webglRecoveryTimerRef.current);
+      webglRecoveryTimerRef.current = null;
+    }
+    setWebglSafeMode(false);
+    setWebglContextLost(false);
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (webglRecoveryTimerRef.current) {
+        window.clearTimeout(webglRecoveryTimerRef.current);
+        webglRecoveryTimerRef.current = null;
+      }
+    };
+  }, []);
   // New Idea 7: heatmap mode.
   const [heatmapMode, setHeatmapMode] = useState(false);
   const [trailMode, setTrailMode] = useState(false);
@@ -5292,16 +5332,16 @@ export function RetroOffice3D({
         */}
         {!immersiveOverlayActive ? (
           <Canvas
-            key={canvasResetKey}
+            key={`${canvasResetKey}:${webglSafeMode ? "safe" : "full"}:${webglRecoveryNonce}`}
             orthographic
-            dpr={[0.75, 1.25]}
+            dpr={webglSafeMode ? [0.5, 0.75] : [0.75, 1.25]}
             camera={{
               position: CAM_POS,
               zoom: cameraZoom,
               near: 0.1,
               far: 100,
             }}
-            shadows={{ type: THREE.BasicShadowMap }}
+            shadows={webglSafeMode ? false : { type: THREE.BasicShadowMap }}
             gl={{
               antialias: false,
               failIfMajorPerformanceCaveat: false,
@@ -5315,7 +5355,8 @@ export function RetroOffice3D({
             {/* Ensure camera looks at the active office target after mount. */}
             <CameraRig target={cameraTarget} />
             <WebGlContextRecovery
-              onContextLostChange={setWebglContextLost}
+              onContextLost={handleWebglContextLost}
+              onContextRestored={handleWebglContextRestored}
             />
             <AdaptiveDprController />
 
@@ -5369,7 +5410,7 @@ export function RetroOffice3D({
               position={[8, 14, 6]}
               intensity={1.1}
               color="#f6f1e6"
-              castShadow
+              castShadow={!webglSafeMode}
               shadow-mapSize={[1024, 1024]}
               shadow-bias={-0.0002}
               shadow-normalBias={0.02}
@@ -5387,9 +5428,11 @@ export function RetroOffice3D({
             <SceneWallPictures showRemoteOffice={remoteOfficeEnabled} />
 
             {/* Environment lighting — async, wrapped in its own Suspense so floor stays visible. */}
-            <Suspense fallback={null}>
-              <Environment preset="city" />
-            </Suspense>
+            {!webglSafeMode ? (
+              <Suspense fallback={null}>
+                <Environment preset="city" />
+              </Suspense>
+            ) : null}
 
             {/* Furniture models — each loads its GLB asynchronously. */}
             <Suspense fallback={null}>

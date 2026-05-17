@@ -4184,8 +4184,10 @@ export function OfficeScreen({
     [marketplace.skillsReport],
   );
   const taskManagerReady = useMemo(
-    () => (taskManagerSkill ? deriveSkillReadinessState(taskManagerSkill) === "ready" : false),
-    [taskManagerSkill],
+    () =>
+      selectedAdapterType === "custom" ||
+      (taskManagerSkill ? deriveSkillReadinessState(taskManagerSkill) === "ready" : false),
+    [selectedAdapterType, taskManagerSkill],
   );
   const soundclawReady = useMemo(
     () => (soundclawSkill ? deriveSkillReadinessState(soundclawSkill) === "ready" : false),
@@ -4444,6 +4446,7 @@ export function OfficeScreen({
           voiceRepliesVoiceId={voiceRepliesVoiceId}
           voiceRepliesSpeed={voiceRepliesSpeed}
           voiceRepliesLoaded={voiceRepliesLoaded}
+          voiceRepliesProvider={voiceRepliesPreference.provider}
           onOfficeTitleChange={setOfficeTitle}
           onRemoteOfficeEnabledChange={setRemoteOfficeEnabled}
           onRemoteOfficeSourceKindChange={setRemoteOfficeSourceKind}

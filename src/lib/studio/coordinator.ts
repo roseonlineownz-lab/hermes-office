@@ -419,7 +419,10 @@ export class StudioSettingsCoordinator {
 }
 
 export const fetchStudioSettings = async (): Promise<StudioSettingsResponse> => {
-  return fetchJson<StudioSettingsResponse>("/api/studio", { cache: "no-store" });
+  console.info("[studio-coordinator] fetching /api/studio...");
+  const result = await fetchJson<StudioSettingsResponse>("/api/studio", { cache: "no-store" });
+  console.info("[studio-coordinator] /api/studio loaded", result?.settings?.gateway?.url);
+  return result;
 };
 
 export const updateStudioSettings = async (

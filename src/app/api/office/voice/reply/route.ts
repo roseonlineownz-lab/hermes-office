@@ -41,7 +41,13 @@ export async function POST(request: Request) {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to synthesize the voice reply.";
-    const status = message.includes("Missing ELEVENLABS_API_KEY") ? 503 : 500;
+    const status = message.includes("Missing ELEVENLABS_API_KEY")
+      ? 503
+      : message.includes("VibeVoice service unavailable") || message.includes("VibeVoice synthesis failed.")
+      ? 503
+      : message.includes("Kokoro synthesis failed.") || message.includes("Model not loaded")
+      ? 503
+      : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

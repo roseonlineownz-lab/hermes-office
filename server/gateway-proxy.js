@@ -371,15 +371,23 @@ function createGatewayProxy(options) {
           upstreamHandshakeTimeoutId = null;
         }
         upstreamReady = true;
+        log(`[gateway-proxy] upstream open url=${upstreamUrl} adapterType=${upstreamAdapterType}`);
         maybeForwardPendingConnect();
       });
 
       upstreamWs.on("message", (upRaw) => {
         const upParsed = safeJsonParse(String(upRaw ?? ""));
-        if (upParsed && isObject(upParsed) && upParsed.type === "res") {
-          const resId = typeof upParsed.id === "string" ? upParsed.id : "";
-          if (resId && connectRequestId && resId === connectRequestId) {
-            connectResponseSent = true;
+        if (upParsed && isObject(upParsed)) {
+          const msgType = upParsed.type || "?";
+          const event = upParsed.event || upParsed.method || "";
+          const agents = upParsed.payload?.agents?.length;
+          log(`[gateway-proxy] upstream>> type=${msgType} ${event ? "event=" + event : ""} ${agents != null ? "agents=" + agents : ""}`);
+          if (upParsed.type === "res") {
+            const resId = typeof upParsed.id === "string" ? upParsed.id : "";
+            if (resId && connectRequestId && resId === connectRequestId) {
+              connectResponseSent = true;
+              log(`[gateway-proxy] connect response ok=${upParsed.ok}`);
+            }
           }
         }
         if (browserWs.readyState === WebSocket.OPEN) {
@@ -458,6 +466,10 @@ function createGatewayProxy(options) {
     browserWs.on("message", async (raw) => {
       const rawStr = String(raw ?? "");
       const rawByteLength = Buffer.byteLength(rawStr, "utf8");
+      const parsed0 = safeJsonParse(rawStr);
+      if (parsed0 && isObject(parsed0)) {
+        log(`[gateway-proxy] browser>> type=${parsed0.type} method=${parsed0.method || ""} id=${parsed0.id || ""}`);
+      }
 
       // Frame size limit
       if (rawByteLength > MAX_FRAME_SIZE) {

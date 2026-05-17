@@ -273,6 +273,7 @@ export class CustomRuntimeProvider implements RuntimeProvider {
       case "exec.approvals.get":
         return ({ file: { agents: {} } } as T);
       case "config.get":
+        return ({ models: {}, agents: {} } as T);
       case "config.patch":
       case "config.set":
         throw new Error(`Custom runtime does not support ${method}.`);

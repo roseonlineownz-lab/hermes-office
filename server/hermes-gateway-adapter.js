@@ -67,6 +67,7 @@ const AGENT_ID = "hermes";
 const MAIN_KEY = "main";
 const MAIN_SESSION_KEY = `agent:${AGENT_ID}:${MAIN_KEY}`;
 const CONFIG_PATH = `${HOME}/.hermes/config.json`;
+const CLAW3D_BACKEND_URL = process.env.CLAW3D_BACKEND_URL || "http://127.0.0.1:8095";
 const MAX_TOOL_ROUNDS = 8;
 
 // ---------------------------------------------------------------------------
@@ -231,6 +232,35 @@ const agentRegistry = new Map([
     settings: { wipe: false, continuity: true, model: HERMES_MODEL },
   }],
 ]);
+
+// ---------------------------------------------------------------------------
+// Sync agents from claw3d-real-backend into the gateway registry
+// ---------------------------------------------------------------------------
+
+async function syncBackendAgents() {
+  try {
+    const res = await fetch(`${CLAW3D_BACKEND_URL}/agents`);
+    if (!res.ok) return;
+    const { data } = await res.json();
+    if (!data || typeof data !== "object") return;
+    let added = 0;
+    for (const [id, agent] of Object.entries(data)) {
+      if (agentRegistry.has(id)) continue; // don't overwrite main hermes
+      agentRegistry.set(id, {
+        id,
+        name: agent.name || id,
+        workspace: `${HOME}/.hermes/workspace-${id}`,
+        role: agent.task || agent.room || "",
+        systemPrompt: `You are ${agent.name}, a specialist agent.`,
+        settings: { wipe: false, continuity: true, model: agent.model || HERMES_MODEL },
+      });
+      added++;
+    }
+    if (added > 0) console.log(`[hermes-adapter] Synced ${added} agent(s) from backend`);
+  } catch {
+    // Backend not available — not fatal, just skip
+  }
+}
 
 // Set of all active sendEvent functions (one per connected WS client)
 /** @type {Set<(frame: object) => void>} */
@@ -1257,11 +1287,13 @@ function startAdapter() {
     });
   });
 
-  httpServer.listen(ADAPTER_PORT, "127.0.0.1", () => {
+  httpServer.listen(ADAPTER_PORT, "127.0.0.1", async () => {
+    await syncBackendAgents();
     console.log(`\n[hermes-adapter] ✓ Listening on ws://localhost:${ADAPTER_PORT}`);
     console.log(`[hermes-adapter] ✓ Forwarding to Hermes API at ${HERMES_API_URL}`);
     console.log(`[hermes-adapter] ✓ Model: ${HERMES_MODEL}`);
     console.log(`[hermes-adapter] ✓ Multi-agent orchestration: ENABLED`);
+    console.log(`[hermes-adapter] ✓ Agents: ${agentRegistry.size} (${[...agentRegistry.keys()].join(", ")})`);
     console.log(`\nOpen Claw3D → ws://localhost:${ADAPTER_PORT}\n`);
   });
 

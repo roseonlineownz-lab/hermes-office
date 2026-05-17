@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CURATED_ELEVENLABS_VOICES } from "@/lib/voiceReply/catalog";
+import { getVoicesForProvider } from "@/lib/voiceReply/catalog";
 import type { StudioGatewayAdapterType } from "@/lib/studio/settings";
 
 type SettingsPanelProps = {
@@ -35,6 +35,7 @@ type SettingsPanelProps = {
   voiceRepliesVoiceId: string | null;
   voiceRepliesSpeed: number;
   voiceRepliesLoaded: boolean;
+  voiceRepliesProvider?: "elevenlabs" | "vibevoice" | "kokoro";
   onVoiceRepliesToggle: (enabled: boolean) => void;
   onVoiceRepliesVoiceChange: (voiceId: string | null) => void;
   onVoiceRepliesSpeedChange: (speed: number) => void;
@@ -72,6 +73,7 @@ export function SettingsPanel({
   voiceRepliesVoiceId,
   voiceRepliesSpeed,
   voiceRepliesLoaded,
+  voiceRepliesProvider = "vibevoice",
   onVoiceRepliesToggle,
   onVoiceRepliesVoiceChange,
   onVoiceRepliesSpeedChange,
@@ -90,6 +92,7 @@ export function SettingsPanel({
     selectedAdapterType === "demo" ||
     selectedAdapterType === "custom";
   const [remoteOfficeTokenDraft, setRemoteOfficeTokenDraft] = useState("");
+  const voiceOptions = getVoicesForProvider(voiceRepliesProvider);
 
   return (
     <div className="px-4 py-4">
@@ -449,7 +452,7 @@ export function SettingsPanel({
           Choose the voice used for spoken agent replies.
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2">
-          {CURATED_ELEVENLABS_VOICES.map((voice) => {
+          {voiceOptions.map((voice) => {
             const selected = voice.id === voiceRepliesVoiceId;
             return (
               <button
