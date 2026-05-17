@@ -15,6 +15,14 @@ type UseRemoteOfficeLayoutResult = {
   snapshot: OfficeLayoutSnapshot | null;
 };
 
+const snapshotSignature = (snapshot: OfficeLayoutSnapshot | null) =>
+  JSON.stringify({
+    gatewayUrl: snapshot?.gatewayUrl ?? "",
+    width: snapshot?.width ?? 0,
+    height: snapshot?.height ?? 0,
+    furniture: snapshot?.furniture ?? [],
+  });
+
 export const useRemoteOfficeLayout = ({
   enabled,
   presenceUrl,
@@ -56,7 +64,12 @@ export const useRemoteOfficeLayout = ({
           payload !== null &&
           "snapshot" in payload
         ) {
-          setSnapshot(payload.snapshot ?? null);
+          const nextSnapshot = (payload.snapshot ?? null) as OfficeLayoutSnapshot | null;
+          setSnapshot((current) =>
+            snapshotSignature(current) === snapshotSignature(nextSnapshot)
+              ? current
+              : nextSnapshot,
+          );
         }
         setError(null);
       } catch (loadError) {

@@ -145,6 +145,7 @@ export const resolveInitialGatewayAutoConnectDelayMs = (
   switch (adapterType) {
     case "hermes":
     case "demo":
+    case "openclaw":
       return INITIAL_AUTO_CONNECT_DELAY_MS;
     default:
       return 0;
@@ -686,7 +687,7 @@ export const resolveGatewayAutoRetryDelayMs = (params: {
 }): number | null => {
   if (params.status !== "disconnected") return null;
   if (!params.didAutoConnect) return null;
-  if (!params.hasConnectedOnce) return null;
+  if (!params.hasConnectedOnce && params.attempt >= 3) return null;
   if (params.wasManualDisconnect) return null;
   if (!params.gatewayUrl.trim()) return null;
   if (params.attempt >= MAX_AUTO_RETRY_ATTEMPTS) return null;

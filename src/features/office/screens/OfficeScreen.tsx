@@ -994,6 +994,7 @@ export function OfficeScreen({
     useState(false);
   const [showDelayedGatewayConnectOverlay, setShowDelayedGatewayConnectOverlay] =
     useState(false);
+
   const [clockTick, setClockTick] = useState(0);
   const [debugRows, setDebugRows] = useState<OfficeDebugRow[]>([]);
   const [feedEvents, setFeedEvents] = useState<OfficeFeedEvent[]>([]);
@@ -1303,11 +1304,12 @@ export function OfficeScreen({
   }, [state.agents]);
   useEffect(() => {
     const now = Date.now();
-    setDanceUntilByAgentId((previous) =>
-      Object.fromEntries(
-        Object.entries(previous).filter(([, until]) => until > now),
-      ),
-    );
+    setDanceUntilByAgentId((previous) => {
+      const entries = Object.entries(previous);
+      const activeEntries = entries.filter(([, until]) => until > now);
+      if (activeEntries.length === entries.length) return previous;
+      return Object.fromEntries(activeEntries);
+    });
   }, [state.agents]);
   useEffect(() => {
     return () => {

@@ -39,12 +39,26 @@ export async function GET(request: Request) {
           { headers: { "Cache-Control": "no-store" } }
         );
       }
+
       if (source === "remote") {
         const startedAt = Date.now();
         console.info("[office-presence] Fetching remote office presence.", {
           presenceUrl: officePreference.remoteOfficePresenceUrl,
           tokenConfigured: Boolean(officePreference.remoteOfficeToken?.trim()),
         });
+        const remoteUrl = new URL(officePreference.remoteOfficePresenceUrl, url.origin);
+        const remoteUrlIsLocalStudio =
+          ["127.0.0.1", "localhost"].includes(remoteUrl.hostname) &&
+          remoteUrl.port === url.port;
+        if (
+          remoteUrlIsLocalStudio &&
+          remoteUrl.pathname === "/api/office/presence"
+        ) {
+          const remoteWorkspaceId =
+            remoteUrl.searchParams.get("workspaceId")?.trim() || "default";
+          const snapshot = loadOfficePresenceSnapshot(remoteWorkspaceId);
+          return NextResponse.json(snapshot, { headers: { "Cache-Control": "no-store" } });
+        }
         const snapshot = await fetchRemoteOfficePresenceSnapshot({
           presenceUrl: officePreference.remoteOfficePresenceUrl,
           token: officePreference.remoteOfficeToken,
