@@ -894,6 +894,10 @@ export const useGatewayConnection = (
 
   useEffect(() => {
     return client.onStatus((nextStatus) => {
+      if (selectedAdapterType === "custom") {
+        gatewayDebugLog("status:ignored-custom", { nextStatus });
+        return;
+      }
       gatewayDebugLog("status", { nextStatus });
       setStatus(nextStatus);
       if (nextStatus !== "connecting") {
@@ -905,7 +909,7 @@ export const useGatewayConnection = (
         }
       }
     });
-  }, [client]);
+  }, [client, selectedAdapterType]);
 
   useEffect(() => {
     return () => {
