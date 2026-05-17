@@ -27,6 +27,17 @@ type UseRemoteOfficePresenceResult = {
   snapshot: OfficePresenceSnapshot | null;
 };
 
+const snapshotSignature = (snapshot: OfficePresenceSnapshot | null) =>
+  JSON.stringify({
+    workspaceId: snapshot?.workspaceId ?? "",
+    agents: (snapshot?.agents ?? []).map((agent) => ({
+      agentId: agent.agentId,
+      name: agent.name,
+      state: agent.state,
+      preferredDeskId: agent.preferredDeskId ?? "",
+    })),
+  });
+
 const normalizeRemoteGatewayUrl = (value: string) => {
   const trimmed = value.trim();
   if (!trimmed) return "";
@@ -212,7 +223,11 @@ export const useRemoteOfficePresence = ({
           workspaceId: "remote-gateway",
         });
         if (cancelled) return;
-        setSnapshot(nextSnapshot);
+        setSnapshot((current) =>
+          snapshotSignature(current) === snapshotSignature(nextSnapshot)
+            ? current
+            : nextSnapshot,
+        );
         setError(null);
         if (!successLoggedRef.current) {
           console.info("[remote-office] Gateway presence polling succeeded.", {

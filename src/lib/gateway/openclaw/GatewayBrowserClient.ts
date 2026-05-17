@@ -705,9 +705,10 @@ export class GatewayBrowserClient {
     this.connectNonce = null;
     this.connectSent = false;
     if (this.connectTimer !== null) window.clearTimeout(this.connectTimer);
-    gatewayBrowserDebugLog("queue-connect", { delayMs: 750 });
+    const delayMs = this.opts.disableDeviceAuth ? 0 : 750;
+    gatewayBrowserDebugLog("queue-connect", { delayMs });
     this.connectTimer = window.setTimeout(() => {
       void this.sendConnect();
-    }, 750);
+    }, delayMs);
   }
 }

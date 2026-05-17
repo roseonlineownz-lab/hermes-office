@@ -74,6 +74,20 @@ export async function GET(request: Request) {
       if (!layoutUrl) {
         return NextResponse.json({ snapshot: null }, { headers: { "Cache-Control": "no-store" } });
       }
+      const remoteLayoutUrl = new URL(layoutUrl, url.origin);
+      const remoteLayoutUrlIsLocalStudio =
+        ["127.0.0.1", "localhost"].includes(remoteLayoutUrl.hostname) &&
+        remoteLayoutUrl.port === url.port;
+      if (
+        remoteLayoutUrlIsLocalStudio &&
+        remoteLayoutUrl.pathname === "/api/office/layout"
+      ) {
+        const snapshot = loadOfficeLayoutSnapshot(gatewayUrl);
+        return NextResponse.json(
+          { snapshot },
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      }
       const snapshot = await fetchRemoteOfficeLayoutSnapshot({
         layoutUrl,
         token: officePreference.remoteOfficeToken,
