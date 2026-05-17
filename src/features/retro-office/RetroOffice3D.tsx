@@ -52,6 +52,7 @@ import type { OfficeAnimationState } from "@/lib/office/eventTriggers";
 import type { StandupMeeting } from "@/lib/office/standup/types";
 import type { SkillStatusEntry } from "@/lib/skills/types";
 import type { StudioGatewayAdapterType } from "@/lib/studio/settings";
+import type { VoiceReplyProvider } from "@/lib/voiceReply/provider";
 import type {
   TaskBoardCard,
   TaskBoardStatus,
@@ -2393,6 +2394,7 @@ export function RetroOffice3D({
   voiceRepliesEnabled = false,
   voiceRepliesVoiceId = null,
   voiceRepliesSpeed = 1,
+  voiceRepliesProvider = "vibevoice",
   voiceRepliesLoaded = false,
   onOfficeTitleChange,
   onRemoteOfficeEnabledChange,
@@ -2506,6 +2508,7 @@ export function RetroOffice3D({
   voiceRepliesEnabled?: boolean;
   voiceRepliesVoiceId?: string | null;
   voiceRepliesSpeed?: number;
+  voiceRepliesProvider?: VoiceReplyProvider;
   voiceRepliesLoaded?: boolean;
   onOfficeTitleChange?: (title: string) => void;
   onRemoteOfficeEnabledChange?: (enabled: boolean) => void;
@@ -7313,6 +7316,7 @@ export function RetroOffice3D({
                 onVoiceRepliesPreview={(voiceId, voiceName) =>
                   onVoiceRepliesPreview?.(voiceId, voiceName)
                 }
+                voiceRepliesProvider={voiceRepliesProvider}
               />
             </div>
           </div>
