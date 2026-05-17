@@ -2566,6 +2566,7 @@ export function RetroOffice3D({
   const [renderAgentUiById, setRenderAgentUiById] = useState<
     Record<string, RenderAgentUiSnapshot>
   >({});
+  const renderAgentUiSignatureRef = useRef<string>("");
   // New Idea 1: right-click context menu.
   const [contextMenu, setContextMenu] = useState<{
     id: string;
@@ -2870,6 +2871,15 @@ export function RetroOffice3D({
           status: agent.status,
         };
       }
+      const signature = Object.keys(next)
+        .sort()
+        .map((id) => {
+          const item = next[id];
+          return `${id}:${item.state}:${item.status}`;
+        })
+        .join("|");
+      if (signature === renderAgentUiSignatureRef.current) return;
+      renderAgentUiSignatureRef.current = signature;
       setRenderAgentUiById(next);
     };
 
