@@ -47,11 +47,12 @@ export async function GET(request: Request) {
           tokenConfigured: Boolean(officePreference.remoteOfficeToken?.trim()),
         });
         const remoteUrl = new URL(officePreference.remoteOfficePresenceUrl, url.origin);
+        const remoteUrlIsSameOrigin = remoteUrl.origin === url.origin;
         const remoteUrlIsLocalStudio =
           ["127.0.0.1", "localhost"].includes(remoteUrl.hostname) &&
           remoteUrl.port === url.port;
         if (
-          remoteUrlIsLocalStudio &&
+          (remoteUrlIsSameOrigin || remoteUrlIsLocalStudio) &&
           remoteUrl.pathname === "/api/office/presence"
         ) {
           const remoteWorkspaceId =
