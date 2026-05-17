@@ -154,9 +154,18 @@ function createAccessGate(options) {
     return true;
   };
 
+  const isStudioSettingsGet = (req) => {
+    const path = String(req.url ?? "/");
+    const pathname = path.startsWith("/") ? path.split("?")[0] : "/";
+    if (req.method !== "GET" && req.method !== "HEAD") return false;
+    if (!pathname.startsWith("/api/studio")) return false;
+    return true;
+  };
+
   const handleHttp = (req, res) => {
     if (!enabled) return false;
     if (maybeGrantFromQuery(req, res)) return true;
+    if (isStudioSettingsGet(req)) return false;
     const auth = getAuthState(req);
     if (!auth.authorized) {
       const statusCode = auth.limited ? 429 : 401;
