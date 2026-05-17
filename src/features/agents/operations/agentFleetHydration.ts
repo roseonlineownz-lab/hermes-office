@@ -27,6 +27,7 @@ type AgentsListResult = {
   agents: Array<{
     id: string;
     name?: string;
+    runtimeName?: string;
     identity?: {
       name?: string;
       theme?: string;
@@ -206,6 +207,7 @@ export async function hydrateAgentFleetFromGateway(params: {
         if (isTemporarySkillAgentName(listedName) && hasStableIdentityName) {
           return {
             ...agent,
+            runtimeName: agent.runtimeName || identityName,
             name: identityName,
             identity: {
               ...(agent.identity ?? {}),
@@ -230,6 +232,10 @@ export async function hydrateAgentFleetFromGateway(params: {
           }
           return {
             ...agent,
+            runtimeName:
+              listedName && !isTemporarySkillAgentName(listedName)
+                ? listedName
+                : agent.runtimeName || recoveredName,
             name: recoveredName,
             identity: {
               ...(agent.identity ?? {}),

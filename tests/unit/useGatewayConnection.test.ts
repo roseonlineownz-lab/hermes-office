@@ -338,9 +338,9 @@ describe("useGatewayConnection", () => {
     expect(captured.url).toBeNull();
   });
 
-  it("uses_a_small_initial_auto_connect_delay_for_hermes_and_demo_only", async () => {
+  it("uses_a_small_initial_auto_connect_delay_for_remote_gateway_backends", async () => {
     const mod = await import("@/lib/gateway/GatewayClient");
-    expect(mod.resolveInitialGatewayAutoConnectDelayMs("openclaw")).toBe(0);
+    expect(mod.resolveInitialGatewayAutoConnectDelayMs("openclaw")).toBe(900);
     expect(mod.resolveInitialGatewayAutoConnectDelayMs("custom")).toBe(0);
     expect(mod.resolveInitialGatewayAutoConnectDelayMs("hermes")).toBe(900);
     expect(mod.resolveInitialGatewayAutoConnectDelayMs("demo")).toBe(900);

@@ -1016,6 +1016,7 @@ export const useGatewayConnection = (
   }, [connect, gatewayUrl, hasLastKnownGoodState, selectedAdapterType, settingsLoaded]);
 
   // Auto-retry on disconnect (gateway busy, network blip, etc.)
+  const lastDisconnectCode = client.lastDisconnectCode;
   useEffect(() => {
     const attempt = retryAttemptRef.current;
     const delay = resolveGatewayAutoRetryDelayMs({
@@ -1026,7 +1027,7 @@ export const useGatewayConnection = (
       gatewayUrl,
       errorMessage: error,
       connectErrorCode,
-      lastDisconnectCode: client.lastDisconnectCode,
+      lastDisconnectCode,
       attempt,
     });
     if (!isAutoManagedAdapter(selectedAdapterType)) return;
@@ -1056,7 +1057,7 @@ export const useGatewayConnection = (
         retryTimerRef.current = null;
       }
     };
-  }, [connect, connectErrorCode, error, gatewayUrl, selectedAdapterType, status]);
+  }, [connect, connectErrorCode, error, gatewayUrl, lastDisconnectCode, selectedAdapterType, status]);
 
   // Reset retry count after the connection has been stable for a minimum
   // duration.  If the upstream drops the connection quickly (e.g. within a
