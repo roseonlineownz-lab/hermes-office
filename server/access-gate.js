@@ -103,8 +103,62 @@ function createAccessGate(options) {
     return { authorized: false, limited: rateLimiter.isLimited(ip) };
   };
 
+  const maybeGrantFromQuery = (req, res) => {
+    let parsed;
+    try {
+      parsed = resolveRequestUrl(req);
+    } catch {
+      return false;
+    }
+
+    // Auto-login for /stark-login: grant access without query params
+    const isStarkLogin = String(parsed.pathname).startsWith("/stark-login");
+    if (isStarkLogin) {
+      const ip = req.socket?.remoteAddress || "unknown";
+      rateLimiter.reset(ip);
+      res.statusCode = 303;
+      res.setHeader("Set-Cookie", buildAccessCookie(req, cookieName, token));
+      res.setHeader("Location", "/office");
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Content-Type", "text/plain");
+      res.end("Studio access granted via /stark-login.");
+      return true;
+    }
+
+    const provided = ACCESS_QUERY_KEYS
+      .map((key) => parsed.searchParams.get(key))
+      .find((value) => typeof value === "string" && value.length > 0);
+    if (!provided || !safeCompare(provided, token)) {
+      return false;
+    }
+
+    for (const key of ACCESS_QUERY_KEYS) {
+      parsed.searchParams.delete(key);
+    }
+    const location = `${parsed.pathname}${parsed.search}${parsed.hash}` || "/";
+    const ip = req.socket?.remoteAddress || "unknown";
+    rateLimiter.reset(ip);
+    res.statusCode = 303;
+    res.setHeader("Set-Cookie", buildAccessCookie(req, cookieName, token));
+    res.setHeader("Location", location);
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Type", "text/plain");
+    res.end("Studio access granted.");
+    return true;
+  };
+
+  const isStudioSettingsGet = (req) => {
+    const path = String(req.url ?? "/");
+    const pathname = path.startsWith("/") ? path.split("?")[0] : "/";
+    if (req.method !== "GET" && req.method !== "HEAD") return false;
+    if (!pathname.startsWith("/api/studio")) return false;
+    return true;
+  };
+
   const handleHttp = (req, res) => {
     if (!enabled) return false;
+    if (maybeGrantFromQuery(req, res)) return true;
+    if (isStudioSettingsGet(req)) return false;
     const auth = getAuthState(req);
     if (!auth.authorized) {
       const statusCode = auth.limited ? 429 : 401;

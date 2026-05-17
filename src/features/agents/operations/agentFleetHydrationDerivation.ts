@@ -23,6 +23,7 @@ type AgentsListResult = {
   agents: Array<{
     id: string;
     name?: string;
+    runtimeName?: string;
     role?: string;
     identity?: {
       name?: string;
@@ -127,6 +128,8 @@ const resolveAgentName = (agent: AgentsListResult["agents"][number]) => {
 };
 
 const resolveRuntimeName = (agent: AgentsListResult["agents"][number]) => {
+  const fromRuntime = typeof agent.runtimeName === "string" ? agent.runtimeName.trim() : "";
+  if (fromRuntime) return fromRuntime;
   const fromList = typeof agent.name === "string" ? agent.name.trim() : "";
   return fromList || null;
 };

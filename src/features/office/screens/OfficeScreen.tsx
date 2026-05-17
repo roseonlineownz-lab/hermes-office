@@ -16,7 +16,6 @@ import { RunningAvatarLoader } from "@/features/agents/components/RunningAvatarL
 import { GatewayConnectScreen } from "@/features/agents/components/GatewayConnectScreen";
 import { useAgentStore, type AgentState } from "@/features/agents/state/store";
 import {
-  GatewayClient,
   buildAgentMainSessionKey,
   type EventFrame,
   isSameSessionKey,
@@ -698,42 +697,6 @@ const EMPTY_REMOTE_CHAT_SESSION: RemoteChatSessionState = {
 };
 const MAX_REMOTE_MESSAGE_CHARS = 2_000;
 
-const extractRemoteHistoryText = (value: unknown): string => {
-  if (typeof value === "string") return value.trim();
-  if (Array.isArray(value)) {
-    return value
-      .map((entry) => {
-        if (typeof entry === "string") return entry;
-        if (entry && typeof entry === "object" && "text" in entry && typeof entry.text === "string") {
-          return entry.text;
-        }
-        if (entry && typeof entry === "object" && "content" in entry && typeof entry.content === "string") {
-          return entry.content;
-        }
-        return "";
-      })
-      .join("")
-      .trim();
-  }
-  return "";
-};
-
-const resolveLatestAssistantHistoryText = (messages: unknown): string | null => {
-  if (!Array.isArray(messages)) return null;
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const entry = messages[index];
-    if (!entry || typeof entry !== "object") continue;
-    const role = "role" in entry && typeof entry.role === "string" ? entry.role.trim().toLowerCase() : "";
-    if (role !== "assistant") continue;
-    const text =
-      extractRemoteHistoryText("content" in entry ? entry.content : undefined) ||
-      extractRemoteHistoryText("text" in entry ? entry.text : undefined) ||
-      extractRemoteHistoryText("message" in entry ? entry.message : undefined);
-    if (text) return text;
-  }
-  return null;
-};
-
 const normalizeOfficeFeedText = (
   value: string | null | undefined,
   maxChars?: number,
@@ -995,6 +958,7 @@ export function OfficeScreen({
     useState(false);
   const [showDelayedGatewayConnectOverlay, setShowDelayedGatewayConnectOverlay] =
     useState(false);
+
   const [clockTick, setClockTick] = useState(0);
   const [debugRows, setDebugRows] = useState<OfficeDebugRow[]>([]);
   const [feedEvents, setFeedEvents] = useState<OfficeFeedEvent[]>([]);
@@ -1111,9 +1075,6 @@ export function OfficeScreen({
   const [activeFloorId, setActiveFloorId] = useState<FloorId>("lobby");
   const [pendingFloorRuntimeSwitch, setPendingFloorRuntimeSwitch] =
     useState<PendingFloorRuntimeSwitch | null>(null);
-  const previousGatewayStatusRef = useRef<"disconnected" | "connecting" | "connected">(
-    "disconnected",
-  );
   const didAutoNavigateFromLobbyRef = useRef(false);
   const [floorRosterCache, setFloorRosterCache] = useState(() =>
     createFloorRosterCache(),
@@ -1193,9 +1154,8 @@ export function OfficeScreen({
   }, [status]);
 
   // Auto-navigate away from lobby when a real adapter connects.
-  // Uses a ref flag instead of previousGatewayStatusRef so the effect can
-  // re-run when detectedAdapterType arrives in a later render (after status
-  // already flipped to "connected").
+  // Uses a ref flag so the effect can re-run when detectedAdapterType arrives
+  // in a later render (after status already flipped to "connected").
   useEffect(() => {
     if (status !== "connected") return;
     if (didAutoNavigateFromLobbyRef.current) return;
@@ -1304,18 +1264,20 @@ export function OfficeScreen({
   }, [state.agents]);
   useEffect(() => {
     const now = Date.now();
-    setDanceUntilByAgentId((previous) =>
-      Object.fromEntries(
-        Object.entries(previous).filter(([, until]) => until > now),
-      ),
-    );
+    setDanceUntilByAgentId((previous) => {
+      const entries = Object.entries(previous);
+      const activeEntries = entries.filter(([, until]) => until > now);
+      if (activeEntries.length === entries.length) return previous;
+      return Object.fromEntries(activeEntries);
+    });
   }, [state.agents]);
   useEffect(() => {
+    const pendingTimeouts = pendingJukeboxCommandTimeoutsRef.current;
     return () => {
-      for (const pendingEntry of pendingJukeboxCommandTimeoutsRef.current.values()) {
+      for (const pendingEntry of pendingTimeouts.values()) {
         window.clearTimeout(pendingEntry.timeoutId);
       }
-      pendingJukeboxCommandTimeoutsRef.current.clear();
+      pendingTimeouts.clear();
     };
   }, []);
   const {
@@ -1884,12 +1846,12 @@ export function OfficeScreen({
     loadAgentsInFlightRef.current = task;
     return task;
   }, [
-    client,
     debugEnabled,
     dispatch,
     gatewayUrl,
     hydrateAgents,
     loadStudioSettings,
+    provider,
     setError,
     setLoading,
     status,
@@ -2215,6 +2177,7 @@ export function OfficeScreen({
       dispatch,
       handleAvatarProfileSave,
       loadAgents,
+      focusLocalAgent,
       persistCompanyBuilderSnapshot,
       setOfficeTitle,
       status,
@@ -2325,7 +2288,6 @@ export function OfficeScreen({
       client,
       createAgentBlock,
       createAgentBusy,
-      dispatch,
       enqueueConfigMutation,
       focusLocalAgent,
       hasDeleteMutationBlock,
@@ -4629,6 +4591,7 @@ export function OfficeScreen({
     }
   }, [
     jukeboxToken,
+    dispatch,
     skillTriggers.movementTargetByAgentId,
     soundclawReady,
     state.agents,

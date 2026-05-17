@@ -2,18 +2,27 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { GET, PUT } from "@/app/api/studio/route";
 
 const makeTempDir = (name: string) => fs.mkdtempSync(path.join(os.tmpdir(), `${name}-`));
 
 describe("studio settings route", () => {
-  const priorStateDir = process.env.OPENCLAW_STATE_DIR;
+  const originalEnv = { ...process.env };
   let tempDir: string | null = null;
 
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env.CLAW3D_GATEWAY_URL;
+    delete process.env.CLAW3D_GATEWAY_TOKEN;
+    delete process.env.CLAW3D_GATEWAY_ADAPTER_TYPE;
+    delete process.env.HERMES_ADAPTER_PORT;
+    delete process.env.DEMO_ADAPTER_PORT;
+  });
+
   afterEach(() => {
-    process.env.OPENCLAW_STATE_DIR = priorStateDir;
+    process.env = { ...originalEnv };
     if (tempDir) {
       fs.rmSync(tempDir, { recursive: true, force: true });
       tempDir = null;

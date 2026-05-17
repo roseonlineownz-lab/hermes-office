@@ -59,8 +59,6 @@ import type {
 import { extractSpeechImage } from "@/lib/text/speech-image";
 import { MonitorImmersiveContent as MonitorImmersiveOverlay } from "@/features/retro-office/overlays/MonitorImmersiveContent";
 import {
-  AGENT_RADIUS,
-  BUMP_FREEZE_MS,
   BUMP_RECOVERY_MS,
   CANVAS_H,
   CANVAS_W,
@@ -72,7 +70,6 @@ import {
   PING_PONG_SESSION_MS,
   ROTATION_STEP_DEG,
   SCALE,
-  SEPARATION_STRENGTH,
   SNAP_GRID,
   WALK_SPEED,
   WALL_THICKNESS,
@@ -2530,19 +2527,6 @@ export function RetroOffice3D({
           : defaultRemoteLayoutFurniture,
     [defaultRemoteLayoutFurniture, remoteLayoutSnapshot, remoteOfficeEnabled],
   );
-  useEffect(() => {
-    setFurniture(
-      buildInitialFurnitureLayout(storageNamespace, layoutPreset).filter(
-        (item) => !isRetiredPingPongLamp(item),
-      ),
-    );
-    setSelectedUid(null);
-    setDeskActionUid(null);
-    setDeskAssignPickerOpen(false);
-    setDrag({ kind: "idle" });
-    setGhostPos(null);
-    setWallDrawStart(null);
-  }, [layoutPreset, storageNamespace]);
   const [editMode, setEditMode] = useState(false);
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
   const [hoverUid, setHoverUid] = useState<string | null>(null);
@@ -2566,6 +2550,7 @@ export function RetroOffice3D({
   const [renderAgentUiById, setRenderAgentUiById] = useState<
     Record<string, RenderAgentUiSnapshot>
   >({});
+  const renderAgentUiSignatureRef = useRef<string>("");
   // New Idea 1: right-click context menu.
   const [contextMenu, setContextMenu] = useState<{
     id: string;
@@ -2574,6 +2559,22 @@ export function RetroOffice3D({
   } | null>(null);
   const [deskActionUid, setDeskActionUid] = useState<string | null>(null);
   const [deskAssignPickerOpen, setDeskAssignPickerOpen] = useState(false);
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setFurniture(
+        buildInitialFurnitureLayout(storageNamespace, layoutPreset).filter(
+          (item) => !isRetiredPingPongLamp(item),
+        ),
+      );
+      setSelectedUid(null);
+      setDeskActionUid(null);
+      setDeskAssignPickerOpen(false);
+      setDrag({ kind: "idle" });
+      setGhostPos(null);
+      setWallDrawStart(null);
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [layoutPreset, setFurniture, storageNamespace]);
   // New Idea 3: speech bubble agent IDs.
   const [speechAgentIds, setSpeechAgentIds] = useState<Set<string>>(new Set());
   const statusFeedEvents = useMemo(
@@ -2870,6 +2871,15 @@ export function RetroOffice3D({
           status: agent.status,
         };
       }
+      const signature = Object.keys(next)
+        .sort()
+        .map((id) => {
+          const item = next[id];
+          return `${id}:${item.state}:${item.status}`;
+        })
+        .join("|");
+      if (signature === renderAgentUiSignatureRef.current) return;
+      renderAgentUiSignatureRef.current = signature;
       setRenderAgentUiById(next);
     };
 

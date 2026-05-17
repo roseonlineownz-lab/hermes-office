@@ -27,6 +27,7 @@ type AgentsListResult = {
   agents: Array<{
     id: string;
     name?: string;
+    runtimeName?: string;
     identity?: {
       name?: string;
       theme?: string;
@@ -194,6 +195,8 @@ export async function hydrateAgentFleetFromGateway(params: {
         const identityName =
           typeof agent.identity?.name === "string" ? agent.identity.name.trim() : "";
         const listedName = typeof agent.name === "string" ? agent.name.trim() : "";
+        const runtimeName =
+          typeof agent.runtimeName === "string" ? agent.runtimeName.trim() : "";
         const hasStableIdentityName =
           Boolean(identityName) && !isTemporarySkillAgentName(identityName);
         const needsIdentityRecovery =
@@ -206,6 +209,7 @@ export async function hydrateAgentFleetFromGateway(params: {
         if (isTemporarySkillAgentName(listedName) && hasStableIdentityName) {
           return {
             ...agent,
+            runtimeName: runtimeName || identityName,
             name: identityName,
             identity: {
               ...(agent.identity ?? {}),
@@ -230,6 +234,11 @@ export async function hydrateAgentFleetFromGateway(params: {
           }
           return {
             ...agent,
+            runtimeName:
+              runtimeName ||
+              (listedName && !isTemporarySkillAgentName(listedName)
+                ? listedName
+                : recoveredName),
             name: recoveredName,
             identity: {
               ...(agent.identity ?? {}),

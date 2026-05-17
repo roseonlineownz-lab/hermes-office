@@ -539,9 +539,7 @@ const AgentsPageScreen = () => {
       setLoading(false);
       setAgentsLoadedOnce(true);
     }
-  }, [
-    client,
-    provider,
+  }, [    provider,
     dispatch,
     hydrateAgents,
     setError,

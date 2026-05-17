@@ -703,10 +703,10 @@ export class GatewayBrowserClient {
     this.connectNonce = null;
     this.connectSent = false;
     if (this.connectTimer !== null) window.clearTimeout(this.connectTimer);
-    const SOCKET_OPEN_CONNECT_DELAY_MS = 75;
-    gatewayBrowserDebugLog("queue-connect", { delayMs: SOCKET_OPEN_CONNECT_DELAY_MS });
+    const delayMs = this.opts.disableDeviceAuth ? 0 : 750;
+    gatewayBrowserDebugLog("queue-connect", { delayMs });
     this.connectTimer = window.setTimeout(() => {
       void this.sendConnect();
-    }, SOCKET_OPEN_CONNECT_DELAY_MS);
+    }, delayMs);
   }
 }

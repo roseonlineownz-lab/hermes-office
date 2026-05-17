@@ -560,6 +560,7 @@ describe("useAgentSettingsMutationController", () => {
   });
 
   it("rejects_empty_selected_skills_allowlist_before_gateway_call", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     const ctx = renderController();
 
     await act(async () => {
@@ -568,6 +569,9 @@ describe("useAgentSettingsMutationController", () => {
 
     expect(mockedUpdateGatewayAgentSkillsAllowlist).not.toHaveBeenCalled();
     expect(ctx.getValue().settingsSkillsError).toBe(
+      "Cannot set selected skills mode: choose at least one skill."
+    );
+    expect(consoleError).toHaveBeenCalledWith(
       "Cannot set selected skills mode: choose at least one skill."
     );
   });
@@ -768,6 +772,7 @@ describe("useAgentSettingsMutationController", () => {
   });
 
   it("preserves_api_key_draft_and_sets_error_message_when_save_fails", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     mockedLoadAgentSkillStatus.mockResolvedValue({
       workspaceDir: "/tmp/workspace",
       managedSkillsDir: "/tmp/skills",
@@ -797,6 +802,7 @@ describe("useAgentSettingsMutationController", () => {
       kind: "error",
       message: "invalid key",
     });
+    expect(consoleError).toHaveBeenCalledWith("invalid key");
   });
 
   it("rejects_empty_api_key_before_gateway_call", async () => {

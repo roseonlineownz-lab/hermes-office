@@ -145,6 +145,7 @@ export const resolveInitialGatewayAutoConnectDelayMs = (
   switch (adapterType) {
     case "hermes":
     case "demo":
+    case "openclaw":
       return INITIAL_AUTO_CONNECT_DELAY_MS;
     default:
       return 0;
@@ -686,7 +687,7 @@ export const resolveGatewayAutoRetryDelayMs = (params: {
 }): number | null => {
   if (params.status !== "disconnected") return null;
   if (!params.didAutoConnect) return null;
-  if (!params.hasConnectedOnce) return null;
+  if (!params.hasConnectedOnce && params.attempt >= 3) return null;
   if (params.wasManualDisconnect) return null;
   if (!params.gatewayUrl.trim()) return null;
   if (params.attempt >= MAX_AUTO_RETRY_ATTEMPTS) return null;
@@ -835,6 +836,18 @@ export const useGatewayConnection = (
 
   useEffect(() => {
     return client.onStatus((nextStatus) => {
+      const customRuntimeOwnsStatus =
+        selectedAdapterType === "custom" &&
+        status !== "connecting" &&
+        (!detectedAdapterType || detectedAdapterType === "custom");
+      if (customRuntimeOwnsStatus) {
+        gatewayDebugLog("status:ignored-custom", {
+          nextStatus,
+          detectedAdapterType,
+          status,
+        });
+        return;
+      }
       gatewayDebugLog("status", { nextStatus });
       setStatus(nextStatus);
       if (nextStatus !== "connecting") {
@@ -846,7 +859,7 @@ export const useGatewayConnection = (
         }
       }
     });
-  }, [client]);
+  }, [client, detectedAdapterType, selectedAdapterType, status]);
 
   useEffect(() => {
     return () => {
@@ -1011,6 +1024,7 @@ export const useGatewayConnection = (
   }, [connect, gatewayUrl, hasLastKnownGoodState, selectedAdapterType, settingsLoaded]);
 
   // Auto-retry on disconnect (gateway busy, network blip, etc.)
+  const lastDisconnectCode = client.lastDisconnectCode;
   useEffect(() => {
     const attempt = retryAttemptRef.current;
     const delay = resolveGatewayAutoRetryDelayMs({
@@ -1021,7 +1035,7 @@ export const useGatewayConnection = (
       gatewayUrl,
       errorMessage: error,
       connectErrorCode,
-      lastDisconnectCode: client.lastDisconnectCode,
+      lastDisconnectCode,
       attempt,
     });
     if (!isAutoManagedAdapter(selectedAdapterType)) return;
@@ -1051,7 +1065,7 @@ export const useGatewayConnection = (
         retryTimerRef.current = null;
       }
     };
-  }, [connect, connectErrorCode, error, gatewayUrl, selectedAdapterType, status]);
+  }, [connect, connectErrorCode, error, gatewayUrl, lastDisconnectCode, selectedAdapterType, status]);
 
   // Reset retry count after the connection has been stable for a minimum
   // duration.  If the upstream drops the connection quickly (e.g. within a
