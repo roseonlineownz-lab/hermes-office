@@ -858,7 +858,7 @@ function WebGlContextRecovery({
     const handleContextLost = (event: Event) => {
       event.preventDefault();
       onContextLost();
-      console.warn("[claw3d] WebGL context lost; waiting for browser restore.");
+      console.info("[claw3d] WebGL context lost; waiting for browser restore.");
     };
     const handleContextRestored = () => {
       const restoredDpr = Math.min(window.devicePixelRatio || 1, 1);
@@ -2766,36 +2766,13 @@ export function RetroOffice3D({
   );
   const [webglContextLost, setWebglContextLost] = useState(false);
   const [webglSafeMode, setWebglSafeMode] = useState(false);
-  const [webglRecoveryNonce, setWebglRecoveryNonce] = useState(0);
-  const webglRecoveryTimerRef = useRef<number | NodeJS.Timeout | null>(null);
   const handleWebglContextLost = useCallback(() => {
-    if (webglRecoveryTimerRef.current) {
-      window.clearTimeout(webglRecoveryTimerRef.current);
-      webglRecoveryTimerRef.current = null;
-    }
     setWebglSafeMode(true);
     setWebglContextLost(true);
-    webglRecoveryTimerRef.current = window.setTimeout(() => {
-      setWebglContextLost(false);
-      setWebglSafeMode(false);
-      setWebglRecoveryNonce((current) => current + 1);
-    }, 300);
   }, []);
   const handleWebglContextRestored = useCallback(() => {
-    if (webglRecoveryTimerRef.current) {
-      window.clearTimeout(webglRecoveryTimerRef.current);
-      webglRecoveryTimerRef.current = null;
-    }
     setWebglSafeMode(false);
     setWebglContextLost(false);
-  }, []);
-  useEffect(() => {
-    return () => {
-      if (webglRecoveryTimerRef.current) {
-        window.clearTimeout(webglRecoveryTimerRef.current);
-        webglRecoveryTimerRef.current = null;
-      }
-    };
   }, []);
   // New Idea 7: heatmap mode.
   const [heatmapMode, setHeatmapMode] = useState(false);
@@ -5345,7 +5322,7 @@ export function RetroOffice3D({
         */}
         {!immersiveOverlayActive ? (
           <Canvas
-            key={`${canvasResetKey}:${webglSafeMode ? "safe" : "full"}:${webglRecoveryNonce}`}
+            key={canvasResetKey}
             orthographic
             dpr={webglSafeMode ? [0.5, 0.75] : [0.75, 1.25]}
             camera={{
