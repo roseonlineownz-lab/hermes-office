@@ -63,6 +63,22 @@ journalctl --user -u hermes-office-dev.service --since "5 min ago" --no-pager | 
   rg -i "Maximum update depth|ReferenceError|Uncaught|Gateway closed|1006|WebGL context|error|failed" || true
 ```
 
+### Snelle alles-in-één smoke check (1 min)
+
+```bash
+# Hermes Office stability check
+python3 /tmp/hermes-office-console-capture.py && \
+journalctl --user -u hermes-office-dev.service --since "2 min ago" --no-pager | \
+  rg -i "Maximum update depth|ReferenceError|Gateway closed|1006|WebGL context|error|failed" || true
+
+# NovaMaster Kaggle/Colab check
+cd /home/faramix/work/NovaMaster && ./scripts/smoke_kaggle_colab.sh
+```
+
+**Verwacht resultaat:**
+- Hermes: `MAX_DEPTH: 0`, geen `Maximum update depth exceeded` of `ReferenceError`
+- NovaMaster: alle checks `PASS`
+
 ## 4) Pass-fail criteria
 
 ### Pass
