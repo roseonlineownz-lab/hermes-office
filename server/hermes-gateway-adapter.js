@@ -14,7 +14,7 @@
  * conversation history, system prompt, and settings.
  *
  * Environment variables:
- *   HERMES_API_URL        Hermes HTTP API base URL   (default: http://localhost:8642)
+ *   HERMES_API_URL        Hermes HTTP API base URL   (default: http://localhost:8643)
  *   HERMES_API_KEY        Bearer token for Hermes     (default: empty)
  *   HERMES_ADAPTER_PORT   WebSocket port              (default: 18789)
  *   HERMES_MODEL          Model identifier            (default: hermes)
@@ -56,11 +56,20 @@ function loadRuntimeEnv() {
 
 loadRuntimeEnv();
 
-const HERMES_API_URL = (process.env.HERMES_API_URL || "http://localhost:8642").replace(/\/$/, "");
+const HERMES_API_URL = (process.env.HERMES_API_URL || "http://localhost:8643").replace(/\/$/, "");
 const HERMES_API_KEY = process.env.HERMES_API_KEY || "";
 const ADAPTER_PORT = parseInt(process.env.HERMES_ADAPTER_PORT || "18789", 10);
-const HERMES_MODEL = process.env.HERMES_MODEL || "hermes";
+const HERMES_MODEL = process.env.HERMES_MODEL || "grok-4.3";
 const HERMES_AGENT_NAME = process.env.HERMES_AGENT_NAME || "Hermes";
+const SOUL_PATH = process.env.CLAW3D_SOUL_PATH || path.join(process.env.HOME || "/home/faramix", "work", "NovaMaster", ".hermes", "SOUL.md");
+function loadSoulContext() {
+  try {
+    return fs.readFileSync(SOUL_PATH, "utf8").slice(0, 12000);
+  } catch {
+    return "";
+  }
+}
+const SOUL_CONTEXT = loadSoulContext();
 const HOME = process.env.HOME || "/tmp";
 
 const AGENT_ID = "hermes";
@@ -74,7 +83,7 @@ const MAX_TOOL_ROUNDS = 8;
 // Orchestrator system prompt
 // ---------------------------------------------------------------------------
 
-const ORCHESTRATOR_SYSTEM_PROMPT = `You are ${HERMES_AGENT_NAME}, an AI orchestrator managing a team of sub-agents in a virtual 3D office.
+const ORCHESTRATOR_SYSTEM_PROMPT = `${SOUL_CONTEXT ? "NovaMaster SOUL.md:\n" + SOUL_CONTEXT + "\n\n" : ""}You are ${HERMES_AGENT_NAME}, an AI orchestrator managing a team of sub-agents in a virtual 3D office.
 
 You have tools to build and manage your team autonomously:
 
