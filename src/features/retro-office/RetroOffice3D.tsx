@@ -25,7 +25,7 @@ import {
   useState,
 } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Environment, OrbitControls } from "@react-three/drei";
+import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { SettingsPanel } from "@/features/office/components/panels/SettingsPanel";
 import { AtmImmersiveScreen } from "@/features/office/screens/AtmImmersiveScreen";
@@ -825,15 +825,20 @@ function WebGlContextRecovery({
   onContextRestored: () => void;
 }) {
   const { gl, invalidate, setDpr } = useThree();
+  const webglStateRef = useRef<"ok" | "lost">("ok");
 
   useEffect(() => {
     const canvas = gl.domElement;
     const handleContextLost = (event: Event) => {
+      if (webglStateRef.current === "lost") return;
+      webglStateRef.current = "lost";
       event.preventDefault();
       onContextLost();
       console.info("[claw3d] WebGL context lost; waiting for browser restore.");
     };
     const handleContextRestored = () => {
+      if (webglStateRef.current === "ok") return;
+      webglStateRef.current = "ok";
       const restoredDpr = Math.min(window.devicePixelRatio || 1, 1);
       gl.setPixelRatio(restoredDpr);
       gl.info.reset();
@@ -2740,12 +2745,12 @@ export function RetroOffice3D({
   const [webglContextLost, setWebglContextLost] = useState(false);
   const [webglSafeMode, setWebglSafeMode] = useState(false);
   const handleWebglContextLost = useCallback(() => {
-    setWebglSafeMode(true);
-    setWebglContextLost(true);
+    setWebglSafeMode((current) => (current ? current : true));
+    setWebglContextLost((current) => (current ? current : true));
   }, []);
   const handleWebglContextRestored = useCallback(() => {
-    setWebglSafeMode(false);
-    setWebglContextLost(false);
+    setWebglSafeMode((current) => (current ? false : current));
+    setWebglContextLost((current) => (current ? false : current));
   }, []);
   // New Idea 7: heatmap mode.
   const [heatmapMode, setHeatmapMode] = useState(false);
@@ -3178,6 +3183,10 @@ export function RetroOffice3D({
         : qaTerminal,
     [activeQaTerminalUid, furniture, qaTerminal],
   );
+  const retroSyncArrivalLogCount = useRef(0);
+  const disableRetroSyncArrival = false;
+  const debugRetroSyncArrival = false;
+
   const [githubCommandArrived, setGithubCommandArrived] = useState(false);
   const [qaCommandArrived, setQaCommandArrived] = useState(false);
   const githubImmersive =
@@ -3390,8 +3399,8 @@ export function RetroOffice3D({
     setManualPhoneBoothOpen(false);
     setManualPhoneCallScenario(null);
     setPhoneBoothImmersiveReady(false);
-    setPhoneBoothDoorOpen(false);
-    setPhoneBoothCommandArrived(false);
+    setPhoneBoothDoorOpen((current) => (current ? false : current));
+    setPhoneBoothCommandArrived((current) => (current ? false : current));
     setPhoneCallStep("dialing");
     setDialedDigits("");
     if (
@@ -3417,8 +3426,8 @@ export function RetroOffice3D({
     setManualSmsBoothOpen(false);
     setManualTextMessageScenario(null);
     setSmsBoothImmersiveReady(false);
-    setSmsBoothDoorOpen(false);
-    setSmsBoothCommandArrived(false);
+    setSmsBoothDoorOpen((current) => (current ? false : current));
+    setSmsBoothCommandArrived((current) => (current ? false : current));
     setTextMessageStep("selecting_contact");
     setTypedMessageText("");
     setActiveTextKey(null);
@@ -3714,11 +3723,51 @@ export function RetroOffice3D({
   }, [activeGithubTerminalUid, activeQaTerminalUid]);
 
   useEffect(() => {
+    if (disableRetroSyncArrival) return;
+
     const syncArrivalState = () => {
       const agentLookup = renderAgentLookupRef.current;
+      const shouldTrackArrivals =
+        Boolean(githubReviewAgentId) ||
+        Boolean(qaTestingAgentId) ||
+        Boolean(phoneBoothAgentId) ||
+        Boolean(smsBoothAgentId) ||
+        Boolean(standupActive && standupMeeting);
+      if (debugRetroSyncArrival) {
+        retroSyncArrivalLogCount.current += 1;
+        const idx = retroSyncArrivalLogCount.current;
+        if (idx <= 8 || idx % 20 === 0) {
+          console.info("[retro-sync-arrival] tick", {
+            idx,
+            shouldTrackArrivals,
+            githubReviewAgentId,
+            qaTestingAgentId,
+            phoneBoothAgentId,
+            smsBoothAgentId,
+            standupActive,
+            standupMeetingPresent: Boolean(standupMeeting),
+          });
+        }
+      }
+      if (!shouldTrackArrivals) {
+        if (lastStandupArrivalKeyRef.current === "") return;
+        lastStandupArrivalKeyRef.current = "";
+        onStandupArrivalsChangeRef.current?.([]);
+        setGithubCommandArrived((current) => (current === false ? current : false));
+        setQaCommandArrived((current) => (current === false ? current : false));
+        setPhoneBoothCommandArrived((current) =>
+          current === false ? current : false,
+        );
+        setPhoneBoothDoorOpen((current) => (current === false ? current : false));
+        setSmsBoothCommandArrived((current) =>
+          current === false ? current : false,
+        );
+        setSmsBoothDoorOpen((current) => (current === false ? current : false));
+        return;
+      }
 
       if (!githubReviewAgentId) {
-        setGithubCommandArrived(false);
+        setGithubCommandArrived((current) => (current === false ? current : false));
       } else {
         const agent = agentLookup.get(githubReviewAgentId);
         const arrived = Boolean(
@@ -3734,7 +3783,7 @@ export function RetroOffice3D({
       }
 
       if (!qaTestingAgentId) {
-        setQaCommandArrived(false);
+        setQaCommandArrived((current) => (current === false ? current : false));
       } else {
         const agent = agentLookup.get(qaTestingAgentId);
         const arrived = Boolean(
@@ -3749,9 +3798,9 @@ export function RetroOffice3D({
       }
 
       if (!phoneBoothAgentId) {
-        setPhoneBoothCommandArrived(false);
+        setPhoneBoothCommandArrived((current) => (current === false ? current : false));
         if (!manualPhoneBoothOpen) {
-          setPhoneBoothDoorOpen(false);
+          setPhoneBoothDoorOpen((current) => (current === false ? current : false));
         }
       } else {
         const agent = agentLookup.get(phoneBoothAgentId);
@@ -3776,9 +3825,9 @@ export function RetroOffice3D({
       }
 
       if (!smsBoothAgentId) {
-        setSmsBoothCommandArrived(false);
+        setSmsBoothCommandArrived((current) => (current === false ? current : false));
         if (!manualSmsBoothOpen) {
-          setSmsBoothDoorOpen(false);
+          setSmsBoothDoorOpen((current) => (current === false ? current : false));
         }
       } else {
         const agent = agentLookup.get(smsBoothAgentId);
@@ -5206,10 +5255,16 @@ export function RetroOffice3D({
       Math.max(5_500, 2_500 + latest.text.trim().length * 42),
     );
     const addTimer = window.setTimeout(() => {
-      setSpeechAgentIds((prev) => new Set([...prev, latest.id]));
+      setSpeechAgentIds((prev) => {
+        if (prev.has(latest.id)) return prev;
+        const next = new Set(prev);
+        next.add(latest.id);
+        return next;
+      });
     }, 0);
     const timer = window.setTimeout(() => {
       setSpeechAgentIds((prev) => {
+        if (!prev.has(latest.id)) return prev;
         const next = new Set(prev);
         next.delete(latest.id);
         return next;
@@ -5233,13 +5288,19 @@ export function RetroOffice3D({
           ? "💻"
           : "☕";
     const addTimer = window.setTimeout(() => {
-      setMoodByAgentId((prev) => ({
-        ...prev,
-        [latest.id]: { emoji, ts: Date.now() },
-      }));
+      setMoodByAgentId((prev) => {
+        const ts = Date.now();
+        const current = prev[latest.id];
+        if (current?.emoji === emoji && current.ts === ts) return prev;
+        return {
+          ...prev,
+          [latest.id]: { emoji, ts },
+        };
+      });
     }, 0);
     const timer = window.setTimeout(() => {
       setMoodByAgentId((prev) => {
+        if (!(latest.id in prev)) return prev;
         const next = { ...prev };
         delete next[latest.id];
         return next;
@@ -5297,7 +5358,7 @@ export function RetroOffice3D({
           <Canvas
             key={canvasResetKey}
             orthographic
-            dpr={webglSafeMode ? [0.35, 0.5] : [0.35, 0.5]}
+            dpr={webglSafeMode ? [0.25, 0.35] : [0.25, 0.35]}
             camera={{
               position: CAM_POS,
               zoom: cameraZoom,
@@ -5308,6 +5369,7 @@ export function RetroOffice3D({
             gl={{
               antialias: false,
               failIfMajorPerformanceCaveat: false,
+              alpha: true,
               powerPreference: "low-power",
             }}
             style={{ width: "100%", height: "100%" }}
@@ -5389,13 +5451,6 @@ export function RetroOffice3D({
 
             {/* Wall pictures — procedural, no async loading. */}
             <SceneWallPictures showRemoteOffice={remoteOfficeEnabled} />
-
-            {/* Environment lighting — async, wrapped in its own Suspense so floor stays visible. */}
-            {!webglSafeMode ? (
-              <Suspense fallback={null}>
-                <Environment preset="city" />
-              </Suspense>
-            ) : null}
 
             {/* Furniture models — each loads its GLB asynchronously. */}
             <Suspense fallback={null}>

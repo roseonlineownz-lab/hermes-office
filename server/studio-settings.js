@@ -56,7 +56,7 @@ const readJsonFile = (filePath) => {
   return JSON.parse(raw);
 };
 
-const DEFAULT_GATEWAY_URL = "ws://localhost:18789";
+const DEFAULT_GATEWAY_URL = "ws://localhost:18793";
 const OPENCLAW_CONFIG_FILENAME = "openclaw.json";
 const ENV_TOKEN_REF_PREFIX = "ref:env:";
 

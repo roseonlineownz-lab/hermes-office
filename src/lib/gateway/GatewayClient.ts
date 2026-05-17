@@ -899,7 +899,7 @@ export const useGatewayConnection = (
         return;
       }
       gatewayDebugLog("status", { nextStatus });
-      setStatus(nextStatus);
+      setStatus((current) => (current === nextStatus ? current : nextStatus));
       if (nextStatus !== "connecting") {
         setError(null);
         if (nextStatus === "connected") {
@@ -944,16 +944,16 @@ export const useGatewayConnection = (
     retryAttemptRef.current = 0;
     wasManualDisconnectRef.current = false;
     if (selectedAdapterType === "custom") {
-      setStatus("connecting");
+      setStatus((current) => (current === "connecting" ? current : "connecting"));
       try {
         await settingsCoordinator.flushPending();
         await probeCustomRuntime(gatewayUrl);
         setDetectedAdapterType("custom");
-        setStatus("connected");
+        setStatus((current) => (current === "connected" ? current : "connected"));
         setConnectErrorCode(null);
         gatewayDebugLog("connect:custom-success", { gatewayUrl });
       } catch (err) {
-        setStatus("disconnected");
+        setStatus((current) => (current === "disconnected" ? current : "disconnected"));
         setDetectedAdapterType(null);
         setConnectErrorCode("studio.custom_runtime_probe_failed");
         setError(formatGatewayError(err));
@@ -1205,7 +1205,7 @@ export const useGatewayConnection = (
     wasManualDisconnectRef.current = true;
     setDetectedAdapterType(null);
     if (selectedAdapterType === "custom") {
-      setStatus("disconnected");
+      setStatus((current) => (current === "disconnected" ? current : "disconnected"));
       return;
     }
     client.disconnect();

@@ -188,6 +188,11 @@ import {
 import { deriveSkillReadinessState } from "@/lib/skills/presentation";
 import type { StandupAgentSnapshot } from "@/lib/office/standup/types";
 import type { SkillStatusEntry } from "@/lib/skills/types";
+import {
+  buildTextMessageFingerprint,
+  shouldKeepPreparedTextMessageMap,
+  shouldSkipPreparedTextMessageUpdate,
+} from "./officeScreenHelpers";
 
 const stringToColor = (str: string) => {
   let hash = 0;
@@ -319,6 +324,20 @@ const formatOpenClawValue = (value: string | null | undefined) => {
   return trimmed || "-";
 };
 
+const areModelChoicesEqual = (a: GatewayModelChoice[], b: GatewayModelChoice[]) => {
+  if (a.length !== b.length) return false;
+  return a.every((entry, index) => {
+    const next = b[index];
+    return (
+      entry.id === next.id &&
+      entry.name === next.name &&
+      entry.provider === next.provider &&
+      (entry.contextWindow ?? null) === (next.contextWindow ?? null) &&
+      Boolean(entry.reasoning) === Boolean(next.reasoning)
+    );
+  });
+};
+
 const buildPhoneCallOutputLine = (text: string) => `[phone booth] ${text}`;
 const buildTextMessageOutputLine = (text: string) => `[messaging booth] ${text}`;
 
@@ -329,6 +348,21 @@ const buildIdentityFileDraft = (identity: AgentIdentityValues) => {
     ...identity,
   };
   return serializePersonalityFiles(draft);
+};
+
+const areGymCooldownUntilMapsEqual = (
+  previous: Record<string, number>,
+  next: Record<string, number>,
+) => {
+  const previousKeys = Object.keys(previous);
+  const nextKeys = Object.keys(next);
+  if (previousKeys.length !== nextKeys.length) return false;
+
+  for (const agentId of nextKeys) {
+    if (previous[agentId] !== next[agentId]) return false;
+  }
+
+  return true;
 };
 
 const resolveOfficeMutationGuardMessage = (guardReason?: string) => {
@@ -2792,12 +2826,11 @@ export function OfficeScreen({
           {},
         );
         if (!cancelled) {
-          setGatewayModels(
-            buildGatewayModelChoices(
-              Array.isArray(result.models) ? result.models : [],
-              null,
-            ),
+          const next = buildGatewayModelChoices(
+            Array.isArray(result.models) ? result.models : [],
+            null,
           );
+          setGatewayModels((current) => (areModelChoicesEqual(current, next) ? current : next));
         }
       } catch {
         // Models are optional - chat still works without model selection.
@@ -2806,7 +2839,7 @@ export function OfficeScreen({
     return () => {
       cancelled = true;
     };
-  }, [status, provider, runtimeSupportsModels]);
+  }, [status, provider.id, gatewayUrl, runtimeSupportsModels]);
 
   useEffect(() => {
     if (chatOpen && !selectedChatAgentId && state.agents.length > 0) {
@@ -2992,6 +3025,20 @@ export function OfficeScreen({
     }),
     [marketplaceGymHoldByAgentId, skillGymHoldByAgentId],
   );
+  const gymTrackedAgentIds = useMemo(
+    () => state.agents.map((agent) => agent.agentId).sort().join("|"),
+    [state.agents],
+  );
+  const hideRetroOffice3D = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("no3d") === "1";
+  const immediateGymHoldFingerprint = useMemo(() => {
+    if (gymTrackedAgentIds.length === 0) {
+      return "";
+    }
+    return gymTrackedAgentIds
+      .split("|")
+      .map((agentId) => `${agentId}:${immediateGymHoldByAgentId[agentId] ? 1 : 0}`)
+      .join(",");
+  }, [gymTrackedAgentIds, immediateGymHoldByAgentId]);
 
   useEffect(() => {
     const now = Date.now();
@@ -3025,15 +3072,12 @@ export function OfficeScreen({
       );
       const prevKeys = Object.keys(previous);
       const nextKeys = Object.keys(next);
-      if (
-        prevKeys.length === nextKeys.length &&
-        nextKeys.every((key) => previous[key] === next[key])
-      ) {
+      if (areGymCooldownUntilMapsEqual(previous, next)) {
         return previous;
       }
       return next;
     });
-  }, [immediateGymHoldByAgentId, state.agents]);
+  }, [gymTrackedAgentIds, immediateGymHoldFingerprint]);
 
   const activeGithubReviewAgentId = useMemo(
     () =>
@@ -3065,6 +3109,17 @@ export function OfficeScreen({
     focusLocalAgent(activeQaTestingAgentId);
   }, [activeQaTestingAgentId, focusLocalAgent]);
 
+  const phoneCallFingerprint = useMemo(() => {
+    return Object.entries(phoneCallByAgentId)
+      .map(([agentId, request]) => `${agentId}:${request.key}`)
+      .sort()
+      .join("|");
+  }, [phoneCallByAgentId]);
+
+  const textMessageFingerprint = useMemo(() => {
+    return buildTextMessageFingerprint(textMessageByAgentId);
+  }, [textMessageByAgentId]);
+
   useEffect(() => {
     const activeKeys = new Set(
       Object.values(phoneCallByAgentId).map((request) => request.key),
@@ -3084,13 +3139,15 @@ export function OfficeScreen({
       );
       if (
         Object.keys(previous).length === Object.keys(next).length &&
-        Object.keys(previous).every((agentId) => previous[agentId] === next[agentId])
+        Object.keys(previous).every(
+          (agentId) => previous[agentId]?.requestKey === next[agentId]?.requestKey,
+        )
       ) {
         return previous;
       }
       return next;
     });
-  }, [phoneCallByAgentId]);
+  }, [phoneCallFingerprint]);
 
   useEffect(() => {
     const requests = Object.entries(phoneCallByAgentId);
@@ -3144,17 +3201,26 @@ export function OfficeScreen({
             scenario?: MockPhoneCallScenario;
           } | null;
           const scenario = body?.scenario;
-          if (!response.ok || !scenario) {
-            preparedPhoneCallKeysRef.current.delete(request.key);
-            return;
+        if (!response.ok || !scenario) {
+          preparedPhoneCallKeysRef.current.delete(request.key);
+          return;
+        }
+        setPreparedPhoneCallsByAgentId((previous) => {
+          const current = previous[agentId];
+          if (
+            current?.requestKey === request.key &&
+            JSON.stringify(current.scenario) === JSON.stringify(scenario)
+          ) {
+            return previous;
           }
-          setPreparedPhoneCallsByAgentId((previous) => ({
+          return {
             ...previous,
             [agentId]: {
               requestKey: request.key,
               scenario,
             },
-          }));
+          };
+        });
         })
         .catch(() => {
           preparedPhoneCallKeysRef.current.delete(request.key);
@@ -3242,15 +3308,12 @@ export function OfficeScreen({
       const next = Object.fromEntries(
         Object.entries(previous).filter(([, entry]) => activeKeys.has(entry.requestKey)),
       );
-      if (
-        Object.keys(previous).length === Object.keys(next).length &&
-        Object.keys(previous).every((agentId) => previous[agentId] === next[agentId])
-      ) {
+      if (shouldKeepPreparedTextMessageMap(previous, next)) {
         return previous;
       }
       return next;
     });
-  }, [textMessageByAgentId]);
+  }, [textMessageFingerprint]);
 
   useEffect(() => {
     const requests = Object.entries(textMessageByAgentId);
@@ -3308,13 +3371,20 @@ export function OfficeScreen({
             preparedTextMessageKeysRef.current.delete(request.key);
             return;
           }
-          setPreparedTextMessagesByAgentId((previous) => ({
-            ...previous,
-            [agentId]: {
-              requestKey: request.key,
-              scenario,
-            },
-          }));
+          setPreparedTextMessagesByAgentId((previous) => {
+            const current = previous[agentId];
+            if (shouldSkipPreparedTextMessageUpdate(current, request.key, scenario)) {
+              return previous;
+            }
+
+            return {
+              ...previous,
+              [agentId]: {
+                requestKey: request.key,
+                scenario,
+              },
+            };
+          });
         })
         .catch(() => {
           preparedTextMessageKeysRef.current.delete(request.key);
@@ -4418,7 +4488,7 @@ export function OfficeScreen({
         </div>
       ) : null}
       <section className="relative h-full min-h-0 min-w-0 overflow-hidden">
-        <RetroOffice3D
+        {!hideRetroOffice3D ? <RetroOffice3D
           agents={allVisibleAgents}
           officeCenterSignal={officeCameraCenterSignal}
           animationState={officeAnimationState}
@@ -4562,7 +4632,7 @@ export function OfficeScreen({
             void taskBoard.refreshRemoteTasks();
             void taskBoard.refreshCronJobs();
           }}
-        />
+        /> : null}
         {jukeboxOpen ? (
           soundclawReady ? (
             <JukeboxPanel
