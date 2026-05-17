@@ -13,8 +13,6 @@ type BrowserPreviewSnapshot = {
   capturedAt: number | null;
 };
 
-const BROWSER_EMBED_FALLBACK_MS = 2500;
-
 function useBrowserPreviewScreenshot(params: {
   browserUrl: string | null;
   enabled: boolean;
@@ -124,43 +122,13 @@ function MonitorBrowserContent({
   const [browserView, setBrowserView] = useState<"embed" | "screenshot">(
     prefersScreenshot ? "screenshot" : "embed",
   );
-  const [allowAutoFallback, setAllowAutoFallback] = useState(!prefersScreenshot);
   const [embedLoaded, setEmbedLoaded] = useState(false);
   const embedFrameRef = useRef<HTMLIFrameElement | null>(null);
   const browserPreview = useBrowserPreviewScreenshot({
     browserUrl,
-    enabled: true,
+    enabled: browserView === "screenshot" || prefersScreenshot,
     live: monitor.live,
   });
-
-  useEffect(() => {
-    if (
-      prefersScreenshot ||
-      browserView !== "embed" ||
-      embedLoaded ||
-      !allowAutoFallback
-    ) {
-      return;
-    }
-    if (browserPreview.error || (!browserPreview.loading && !browserPreview.mediaUrl)) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setAllowAutoFallback(false);
-      setBrowserView((current) => (current === "embed" ? "screenshot" : current));
-    }, BROWSER_EMBED_FALLBACK_MS);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [
-    allowAutoFallback,
-    browserPreview.error,
-    browserPreview.loading,
-    browserPreview.mediaUrl,
-    browserView,
-    embedLoaded,
-    prefersScreenshot,
-  ]);
 
   const handleEmbedLoad = useCallback(() => {
     const frame = embedFrameRef.current;
@@ -173,7 +141,6 @@ function MonitorBrowserContent({
       const loadedUrl = frame.contentWindow?.location?.href?.trim() ?? "";
       const loadedText = frame.contentDocument?.body?.innerText?.trim() ?? "";
       if (loadedUrl === "about:blank" && !loadedText) {
-        setAllowAutoFallback(false);
         setBrowserView("screenshot");
         return;
       }
@@ -199,7 +166,6 @@ function MonitorBrowserContent({
           <button
             type="button"
             onClick={() => {
-              setAllowAutoFallback(false);
               setEmbedLoaded(false);
               setBrowserView((current) =>
                 current === "embed" ? "screenshot" : "embed",

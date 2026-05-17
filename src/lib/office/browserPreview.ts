@@ -1,29 +1,13 @@
 import { isLocalGatewayUrl } from "@/lib/gateway/local-gateway";
 
-const SCREENSHOT_ONLY_HOSTS = [
-  /(^|\.)x\.com$/i,
-  /(^|\.)twitter\.com$/i,
-  /(^|\.)instagram\.com$/i,
-  /(^|\.)facebook\.com$/i,
-  /(^|\.)threads\.net$/i,
-  /(^|\.)linkedin\.com$/i,
-  /(^|\.)tiktok\.com$/i,
-];
-
 const normalizeLoopbackHostname = (hostname: string) => {
   const normalized = hostname.trim().toLowerCase();
   return normalized === "0.0.0.0" ? "127.0.0.1" : hostname;
 };
 
 export const shouldPreferBrowserScreenshot = (value: string | null | undefined): boolean => {
-  const trimmed = value?.trim();
-  if (!trimmed) return false;
-  try {
-    const hostname = new URL(trimmed).hostname;
-    return SCREENSHOT_ONLY_HOSTS.some((pattern) => pattern.test(hostname));
-  } catch {
-    return false;
-  }
+  void value;
+  return false;
 };
 
 export const resolveBrowserControlBaseUrl = (gatewayUrl: string | null | undefined): string | null => {

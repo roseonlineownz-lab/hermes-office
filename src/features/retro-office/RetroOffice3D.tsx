@@ -789,29 +789,23 @@ const ReadOnlyFurnitureClone = memo(function ReadOnlyFurnitureClone({
 });
 
 function AdaptiveDprController() {
-  const { gl, setDpr } = useThree();
-  const currentDprRef = useRef(1);
-  const frameCounterRef = useRef(0);
-  const avgDeltaRef = useRef(1 / 60);
+  const { setDpr } = useThree();
   const initializedRef = useRef(false);
 
   useEffect(() => {
     if (initializedRef.current) return;
     initializedRef.current = true;
     const applyDpr = (nextDpr: number) => {
-      const normalizedDpr = Number(nextDpr.toFixed(2));
-      if (Math.abs(normalizedDpr - currentDprRef.current) < 0.001) return;
-      currentDprRef.current = normalizedDpr;
-      setDpr(normalizedDpr);
+      setDpr(Number(nextDpr.toFixed(2)));
     };
-    const initialDpr = Math.min(window.devicePixelRatio || 1, 1.25);
+    const initialDpr = 0.5;
     applyDpr(initialDpr);
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible") {
-        applyDpr(0.75);
+        applyDpr(0.35);
         return;
       }
-      const restoredDpr = Math.min(window.devicePixelRatio || 1, 1.25);
+      const restoredDpr = 0.5;
       applyDpr(restoredDpr);
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -819,27 +813,6 @@ function AdaptiveDprController() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [setDpr]);
-
-  useFrame((_, delta) => {
-    if (document.visibilityState !== "visible") return;
-    avgDeltaRef.current = avgDeltaRef.current * 0.92 + delta * 0.08;
-    frameCounterRef.current += 1;
-    if (frameCounterRef.current < 45) return;
-    frameCounterRef.current = 0;
-
-    const maxDpr = Math.min(window.devicePixelRatio || 1, 1.25);
-    const minDpr = 0.75;
-    let nextDpr = currentDprRef.current;
-    if (avgDeltaRef.current > 1 / 42) {
-      nextDpr = Math.max(minDpr, currentDprRef.current - 0.1);
-    } else if (avgDeltaRef.current < 1 / 57) {
-      nextDpr = Math.min(maxDpr, currentDprRef.current + 0.05);
-    }
-    if (Math.abs(nextDpr - currentDprRef.current) < 0.025) return;
-    currentDprRef.current = nextDpr;
-    setDpr(Number(nextDpr.toFixed(2)));
-    gl.info.reset();
-  });
 
   return null;
 }
@@ -5324,18 +5297,18 @@ export function RetroOffice3D({
           <Canvas
             key={canvasResetKey}
             orthographic
-            dpr={webglSafeMode ? [0.5, 0.75] : [0.75, 1.25]}
+            dpr={webglSafeMode ? [0.35, 0.5] : [0.35, 0.5]}
             camera={{
               position: CAM_POS,
               zoom: cameraZoom,
               near: 0.1,
               far: 100,
             }}
-            shadows={webglSafeMode ? false : { type: THREE.BasicShadowMap }}
+            shadows={false}
             gl={{
               antialias: false,
               failIfMajorPerformanceCaveat: false,
-              powerPreference: "default",
+              powerPreference: "low-power",
             }}
             style={{ width: "100%", height: "100%" }}
             onPointerUp={() => {
