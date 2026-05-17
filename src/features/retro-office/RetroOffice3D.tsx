@@ -25,7 +25,7 @@ import {
   useState,
 } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Environment, OrbitControls } from "@react-three/drei";
+import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { SettingsPanel } from "@/features/office/components/panels/SettingsPanel";
 import { AtmImmersiveScreen } from "@/features/office/screens/AtmImmersiveScreen";
@@ -52,6 +52,7 @@ import type { OfficeAnimationState } from "@/lib/office/eventTriggers";
 import type { StandupMeeting } from "@/lib/office/standup/types";
 import type { SkillStatusEntry } from "@/lib/skills/types";
 import type { StudioGatewayAdapterType } from "@/lib/studio/settings";
+import type { VoiceReplyProvider } from "@/lib/voiceReply/provider";
 import type {
   TaskBoardCard,
   TaskBoardStatus,
@@ -90,7 +91,6 @@ import {
   ensureOfficeServerRoom,
   isRetiredPingPongLamp,
   materializeDefaults,
-  type OfficeLayoutPreset,
 } from "@/features/retro-office/core/furnitureDefaults";
 import {
   clampPointToZone,
@@ -219,7 +219,6 @@ import {
   PingPongBall as ScenePingPongBall,
   SpotlightEffect as SceneSpotlightEffect,
 } from "@/features/retro-office/systems/sceneRuntime";
-import { applyAgentCollisionBumps } from "@/features/retro-office/systems/NavigationSystem";
 import {
   HeatmapSystem as AgentHeatmapSystem,
   TrailSystem as AgentTrailSystem,
@@ -790,24 +789,24 @@ const ReadOnlyFurnitureClone = memo(function ReadOnlyFurnitureClone({
 });
 
 function AdaptiveDprController() {
-  const { gl, setDpr } = useThree();
-  const currentDprRef = useRef(1.25);
-  const frameCounterRef = useRef(0);
-  const avgDeltaRef = useRef(1 / 60);
+  const { setDpr } = useThree();
+  const initializedRef = useRef(false);
 
   useEffect(() => {
-    const initialDpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    currentDprRef.current = initialDpr;
-    setDpr(initialDpr);
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+    const applyDpr = (nextDpr: number) => {
+      setDpr(Number(nextDpr.toFixed(2)));
+    };
+    const initialDpr = 0.5;
+    applyDpr(initialDpr);
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible") {
-        currentDprRef.current = 0.85;
-        setDpr(0.85);
+        applyDpr(0.35);
         return;
       }
-      const restoredDpr = Math.min(window.devicePixelRatio || 1, 1.5);
-      currentDprRef.current = restoredDpr;
-      setDpr(restoredDpr);
+      const restoredDpr = 0.5;
+      applyDpr(restoredDpr);
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
@@ -815,26 +814,51 @@ function AdaptiveDprController() {
     };
   }, [setDpr]);
 
-  useFrame((_, delta) => {
-    if (document.visibilityState !== "visible") return;
-    avgDeltaRef.current = avgDeltaRef.current * 0.92 + delta * 0.08;
-    frameCounterRef.current += 1;
-    if (frameCounterRef.current < 45) return;
-    frameCounterRef.current = 0;
+  return null;
+}
 
-    const maxDpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    const minDpr = 0.85;
-    let nextDpr = currentDprRef.current;
-    if (avgDeltaRef.current > 1 / 42) {
-      nextDpr = Math.max(minDpr, currentDprRef.current - 0.1);
-    } else if (avgDeltaRef.current < 1 / 57) {
-      nextDpr = Math.min(maxDpr, currentDprRef.current + 0.05);
-    }
-    if (Math.abs(nextDpr - currentDprRef.current) < 0.025) return;
-    currentDprRef.current = nextDpr;
-    setDpr(Number(nextDpr.toFixed(2)));
-    gl.info.reset();
-  });
+function WebGlContextRecovery({
+  onContextLost,
+  onContextRestored,
+}: {
+  onContextLost: () => void;
+  onContextRestored: () => void;
+}) {
+  const { gl, invalidate, setDpr } = useThree();
+  const webglStateRef = useRef<"ok" | "lost">("ok");
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const handleContextLost = (event: Event) => {
+      if (webglStateRef.current === "lost") return;
+      webglStateRef.current = "lost";
+      event.preventDefault();
+      onContextLost();
+      console.info("[claw3d] WebGL context lost; waiting for browser restore.");
+    };
+    const handleContextRestored = () => {
+      if (webglStateRef.current === "ok") return;
+      webglStateRef.current = "ok";
+      const restoredDpr = Math.min(window.devicePixelRatio || 1, 1);
+      gl.setPixelRatio(restoredDpr);
+      gl.info.reset();
+      setDpr(restoredDpr);
+      onContextRestored();
+      invalidate();
+      console.info("[claw3d] WebGL context restored.");
+    };
+
+    canvas.addEventListener("webglcontextlost", handleContextLost, false);
+    canvas.addEventListener("webglcontextrestored", handleContextRestored, false);
+    return () => {
+      canvas.removeEventListener("webglcontextlost", handleContextLost, false);
+      canvas.removeEventListener(
+        "webglcontextrestored",
+        handleContextRestored,
+        false,
+      );
+    };
+  }, [gl, invalidate, onContextLost, onContextRestored, setDpr]);
 
   return null;
 }
@@ -2173,12 +2197,106 @@ function useAgentTick(
 
     // Collision bump — when agents overlap, stop them briefly and reroute them
     // in different directions without the old hard shove.
-    const movedWithCollisions = applyAgentCollisionBumps({ agents: moved, now });
+    const collisionCellSize = AGENT_RADIUS * 4;
+    const collisionBuckets = new Map<string, number[]>();
+    for (let index = 0; index < moved.length; index += 1) {
+      const agent = moved[index];
+      if ("role" in agent && agent.role === "janitor") continue;
+      const bucketKey = `${Math.floor(agent.x / collisionCellSize)}:${Math.floor(
+        agent.y / collisionCellSize,
+      )}`;
+      const bucket = collisionBuckets.get(bucketKey);
+      if (bucket) bucket.push(index);
+      else collisionBuckets.set(bucketKey, [index]);
+    }
 
-    renderAgentsRef.current = movedWithCollisions;
+    for (let i = 0; i < moved.length; i++) {
+      const mi = moved[i];
+      if ("role" in mi && mi.role === "janitor") continue;
+      if (
+        moved[i].state === "sitting" ||
+        moved[i].state === "working_out" ||
+        moved[i].state === "dancing"
+      )
+        continue;
+      if (moved[i].pingPongUntil !== undefined && moved[i].state !== "walking")
+        continue;
+      if (moved[i].bumpedUntil !== undefined) continue;
+      if ((moved[i].collisionCooldownUntil ?? 0) > now) continue;
+      let sx = 0,
+        sy = 0,
+        fx = 0,
+        fy = 0;
+      const bucketX = Math.floor(mi.x / collisionCellSize);
+      const bucketY = Math.floor(mi.y / collisionCellSize);
+      for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+        for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+          const bucket = collisionBuckets.get(
+            `${bucketX + offsetX}:${bucketY + offsetY}`,
+          );
+          if (!bucket) continue;
+          for (const j of bucket) {
+            if (i === j) continue;
+            const mj = moved[j];
+            if ("role" in mj && mj.role === "janitor") continue;
+            let ddx = moved[i].x - moved[j].x;
+            let ddy = moved[i].y - moved[j].y;
+            const d = Math.hypot(ddx, ddy);
+            const minDist = AGENT_RADIUS * 2;
+            if (d < minDist) {
+              // d=0 edge case: exact overlap — use a random direction to break symmetry.
+              if (d === 0) {
+                ddx = Math.random() - 0.5;
+                ddy = Math.random() - 0.5;
+              }
+              const effD = Math.max(d, 0.01);
+              const effNorm = Math.hypot(ddx, ddy) || 1;
+              const push = (1 - effD / minDist) * SEPARATION_STRENGTH;
+              sx += (ddx / effNorm) * push;
+              sy += (ddy / effNorm) * push;
+              fx += (-ddx / effNorm) * push;
+              fy += (-ddy / effNorm) * push;
+            }
+          }
+        }
+      }
+      if (sx === 0 && sy === 0) continue;
+      const pushMag = Math.hypot(sx, sy);
+      const norm = pushMag || 1;
+      // Pick the roam point most aligned with the push direction as the escape target.
+      let bestDot = -Infinity;
+      const roamCandidates = isRemoteOfficeAgentId(moved[i].id)
+        ? REMOTE_ROAM_POINTS
+        : ROAM_POINTS;
+      let escapeTarget = roamCandidates[0];
+      for (const rp of roamCandidates) {
+        const rdx = rp.x - moved[i].x,
+          rdy = rp.y - moved[i].y;
+        const rdist = Math.hypot(rdx, rdy) || 1;
+        const dot = (rdx / rdist) * (sx / norm) + (rdy / rdist) * (sy / norm);
+        if (dot > bestDot) {
+          bestDot = dot;
+          escapeTarget = rp;
+        }
+      }
+      moved[i] = {
+        ...moved[i],
+        // Face the other agent during the pause so the bump reads like a brief chat.
+        facing: Math.atan2(fx || sx, fy || sy),
+        // Freeze legs and store the escape target — the tick's bump handler will
+        // route here when the timer expires.
+        state: "standing",
+        path: [],
+        targetX: escapeTarget.x,
+        targetY: escapeTarget.y,
+        bumpedUntil: now + BUMP_FREEZE_MS,
+        bumpTalkUntil: now + BUMP_FREEZE_MS,
+      };
+    }
+    renderAgentsRef.current = moved;
     const renderAgentLookup = renderAgentLookupRef.current;
     renderAgentLookup.clear();
-    for (const agent of movedWithCollisions) {
+    for (const agent of moved) {
       renderAgentLookup.set(agent.id, agent);
     }
   };
@@ -2217,37 +2335,12 @@ const getAgentInitials = (name: string | null | undefined): string => {
     .join("");
 };
 
-const buildInitialFurnitureLayout = (
-  storageNamespace: string,
-  layoutPreset: OfficeLayoutPreset,
-): FurnitureItem[] =>
-  ensureOfficeKanbanBoard(
-    ensureOfficeJukebox(
-      ensureOfficeQaLab(
-        ensureOfficeGymRoom(
-          ensureOfficeServerRoom(
-            ensureOfficePhoneBooth(
-              ensureOfficeSmsBooth(
-                ensureOfficeAtm(
-                  ensureOfficePingPongTable(
-                    loadFurniture(storageNamespace) ?? materializeDefaults(layoutPreset),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-
 export function RetroOffice3D({
   agents,
   officeCenterSignal = 0,
   animationState = null,
   readOnly = false,
   storageNamespace = "default",
-  layoutPreset = "office",
   deskAssignmentByDeskUid = EMPTY_STRING_RECORD,
   cleaningCues = EMPTY_CLEANING_CUES,
   deskHoldByAgentId = EMPTY_BOOLEAN_RECORD,
@@ -2279,6 +2372,7 @@ export function RetroOffice3D({
   voiceRepliesEnabled = false,
   voiceRepliesVoiceId = null,
   voiceRepliesSpeed = 1,
+  voiceRepliesProvider = "vibevoice",
   voiceRepliesLoaded = false,
   onOfficeTitleChange,
   onRemoteOfficeEnabledChange,
@@ -2361,7 +2455,6 @@ export function RetroOffice3D({
   > | null;
   readOnly?: boolean;
   storageNamespace?: string;
-  layoutPreset?: OfficeLayoutPreset;
   deskAssignmentByDeskUid?: Record<string, string>;
   cleaningCues?: OfficeCleaningCue[];
   deskHoldByAgentId?: Record<string, boolean>;
@@ -2393,6 +2486,7 @@ export function RetroOffice3D({
   voiceRepliesEnabled?: boolean;
   voiceRepliesVoiceId?: string | null;
   voiceRepliesSpeed?: number;
+  voiceRepliesProvider?: VoiceReplyProvider;
   voiceRepliesLoaded?: boolean;
   onOfficeTitleChange?: (title: string) => void;
   onRemoteOfficeEnabledChange?: (enabled: boolean) => void;
@@ -2502,8 +2596,26 @@ export function RetroOffice3D({
   );
 
   const [furniture, setFurniture] = useState<FurnitureItem[]>(() =>
-    buildInitialFurnitureLayout(storageNamespace, layoutPreset).filter(
-      (item) => !isRetiredPingPongLamp(item),
+    ensureOfficeKanbanBoard(
+      ensureOfficeJukebox(
+        ensureOfficeQaLab(
+          ensureOfficeGymRoom(
+            ensureOfficeServerRoom(
+              ensureOfficePhoneBooth(
+                ensureOfficeSmsBooth(
+                  ensureOfficeAtm(
+                    ensureOfficePingPongTable(
+                      (
+                        loadFurniture(storageNamespace) ?? materializeDefaults()
+                      ).filter((item) => !isRetiredPingPongLamp(item)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     ),
   );
   const defaultRemoteLayoutFurniture = useMemo(
@@ -2530,19 +2642,6 @@ export function RetroOffice3D({
           : defaultRemoteLayoutFurniture,
     [defaultRemoteLayoutFurniture, remoteLayoutSnapshot, remoteOfficeEnabled],
   );
-  useEffect(() => {
-    setFurniture(
-      buildInitialFurnitureLayout(storageNamespace, layoutPreset).filter(
-        (item) => !isRetiredPingPongLamp(item),
-      ),
-    );
-    setSelectedUid(null);
-    setDeskActionUid(null);
-    setDeskAssignPickerOpen(false);
-    setDrag({ kind: "idle" });
-    setGhostPos(null);
-    setWallDrawStart(null);
-  }, [layoutPreset, storageNamespace]);
   const [editMode, setEditMode] = useState(false);
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
   const [hoverUid, setHoverUid] = useState<string | null>(null);
@@ -2566,6 +2665,7 @@ export function RetroOffice3D({
   const [renderAgentUiById, setRenderAgentUiById] = useState<
     Record<string, RenderAgentUiSnapshot>
   >({});
+  const renderAgentUiSignatureRef = useRef<string>("");
   // New Idea 1: right-click context menu.
   const [contextMenu, setContextMenu] = useState<{
     id: string;
@@ -2638,12 +2738,20 @@ export function RetroOffice3D({
     () =>
       [
         remoteOfficeEnabled ? "remote" : "local",
-        gatewayStatus ?? "unknown",
-        String(agents.length),
         String(officeCenterSignal),
       ].join(":"),
-    [agents.length, gatewayStatus, officeCenterSignal, remoteOfficeEnabled],
+    [officeCenterSignal, remoteOfficeEnabled],
   );
+  const [webglContextLost, setWebglContextLost] = useState(false);
+  const [webglSafeMode, setWebglSafeMode] = useState(false);
+  const handleWebglContextLost = useCallback(() => {
+    setWebglSafeMode((current) => (current ? current : true));
+    setWebglContextLost((current) => (current ? current : true));
+  }, []);
+  const handleWebglContextRestored = useCallback(() => {
+    setWebglSafeMode((current) => (current ? false : current));
+    setWebglContextLost((current) => (current ? false : current));
+  }, []);
   // New Idea 7: heatmap mode.
   const [heatmapMode, setHeatmapMode] = useState(false);
   const [trailMode, setTrailMode] = useState(false);
@@ -2870,6 +2978,15 @@ export function RetroOffice3D({
           status: agent.status,
         };
       }
+      const signature = Object.keys(next)
+        .sort()
+        .map((id) => {
+          const item = next[id];
+          return `${id}:${item.state}:${item.status}`;
+        })
+        .join("|");
+      if (signature === renderAgentUiSignatureRef.current) return;
+      renderAgentUiSignatureRef.current = signature;
       setRenderAgentUiById(next);
     };
 
@@ -3066,6 +3183,10 @@ export function RetroOffice3D({
         : qaTerminal,
     [activeQaTerminalUid, furniture, qaTerminal],
   );
+  const retroSyncArrivalLogCount = useRef(0);
+  const disableRetroSyncArrival = false;
+  const debugRetroSyncArrival = false;
+
   const [githubCommandArrived, setGithubCommandArrived] = useState(false);
   const [qaCommandArrived, setQaCommandArrived] = useState(false);
   const githubImmersive =
@@ -3278,8 +3399,8 @@ export function RetroOffice3D({
     setManualPhoneBoothOpen(false);
     setManualPhoneCallScenario(null);
     setPhoneBoothImmersiveReady(false);
-    setPhoneBoothDoorOpen(false);
-    setPhoneBoothCommandArrived(false);
+    setPhoneBoothDoorOpen((current) => (current ? false : current));
+    setPhoneBoothCommandArrived((current) => (current ? false : current));
     setPhoneCallStep("dialing");
     setDialedDigits("");
     if (
@@ -3305,8 +3426,8 @@ export function RetroOffice3D({
     setManualSmsBoothOpen(false);
     setManualTextMessageScenario(null);
     setSmsBoothImmersiveReady(false);
-    setSmsBoothDoorOpen(false);
-    setSmsBoothCommandArrived(false);
+    setSmsBoothDoorOpen((current) => (current ? false : current));
+    setSmsBoothCommandArrived((current) => (current ? false : current));
     setTextMessageStep("selecting_contact");
     setTypedMessageText("");
     setActiveTextKey(null);
@@ -3602,11 +3723,51 @@ export function RetroOffice3D({
   }, [activeGithubTerminalUid, activeQaTerminalUid]);
 
   useEffect(() => {
+    if (disableRetroSyncArrival) return;
+
     const syncArrivalState = () => {
       const agentLookup = renderAgentLookupRef.current;
+      const shouldTrackArrivals =
+        Boolean(githubReviewAgentId) ||
+        Boolean(qaTestingAgentId) ||
+        Boolean(phoneBoothAgentId) ||
+        Boolean(smsBoothAgentId) ||
+        Boolean(standupActive && standupMeeting);
+      if (debugRetroSyncArrival) {
+        retroSyncArrivalLogCount.current += 1;
+        const idx = retroSyncArrivalLogCount.current;
+        if (idx <= 8 || idx % 20 === 0) {
+          console.info("[retro-sync-arrival] tick", {
+            idx,
+            shouldTrackArrivals,
+            githubReviewAgentId,
+            qaTestingAgentId,
+            phoneBoothAgentId,
+            smsBoothAgentId,
+            standupActive,
+            standupMeetingPresent: Boolean(standupMeeting),
+          });
+        }
+      }
+      if (!shouldTrackArrivals) {
+        if (lastStandupArrivalKeyRef.current === "") return;
+        lastStandupArrivalKeyRef.current = "";
+        onStandupArrivalsChangeRef.current?.([]);
+        setGithubCommandArrived((current) => (current === false ? current : false));
+        setQaCommandArrived((current) => (current === false ? current : false));
+        setPhoneBoothCommandArrived((current) =>
+          current === false ? current : false,
+        );
+        setPhoneBoothDoorOpen((current) => (current === false ? current : false));
+        setSmsBoothCommandArrived((current) =>
+          current === false ? current : false,
+        );
+        setSmsBoothDoorOpen((current) => (current === false ? current : false));
+        return;
+      }
 
       if (!githubReviewAgentId) {
-        setGithubCommandArrived(false);
+        setGithubCommandArrived((current) => (current === false ? current : false));
       } else {
         const agent = agentLookup.get(githubReviewAgentId);
         const arrived = Boolean(
@@ -3622,7 +3783,7 @@ export function RetroOffice3D({
       }
 
       if (!qaTestingAgentId) {
-        setQaCommandArrived(false);
+        setQaCommandArrived((current) => (current === false ? current : false));
       } else {
         const agent = agentLookup.get(qaTestingAgentId);
         const arrived = Boolean(
@@ -3637,9 +3798,9 @@ export function RetroOffice3D({
       }
 
       if (!phoneBoothAgentId) {
-        setPhoneBoothCommandArrived(false);
+        setPhoneBoothCommandArrived((current) => (current === false ? current : false));
         if (!manualPhoneBoothOpen) {
-          setPhoneBoothDoorOpen(false);
+          setPhoneBoothDoorOpen((current) => (current === false ? current : false));
         }
       } else {
         const agent = agentLookup.get(phoneBoothAgentId);
@@ -3664,9 +3825,9 @@ export function RetroOffice3D({
       }
 
       if (!smsBoothAgentId) {
-        setSmsBoothCommandArrived(false);
+        setSmsBoothCommandArrived((current) => (current === false ? current : false));
         if (!manualSmsBoothOpen) {
-          setSmsBoothDoorOpen(false);
+          setSmsBoothDoorOpen((current) => (current === false ? current : false));
         }
       } else {
         const agent = agentLookup.get(smsBoothAgentId);
@@ -4913,7 +5074,7 @@ export function RetroOffice3D({
         .filter((item) => item.type === "desk_cubicle")
         .map((item) => item._uid),
     );
-    setFurniture(materializeDefaults(layoutPreset));
+    setFurniture(materializeDefaults());
     setSelectedUid(null);
     setDrag({ kind: "idle" });
     setGhostPos(null);
@@ -5094,10 +5255,16 @@ export function RetroOffice3D({
       Math.max(5_500, 2_500 + latest.text.trim().length * 42),
     );
     const addTimer = window.setTimeout(() => {
-      setSpeechAgentIds((prev) => new Set([...prev, latest.id]));
+      setSpeechAgentIds((prev) => {
+        if (prev.has(latest.id)) return prev;
+        const next = new Set(prev);
+        next.add(latest.id);
+        return next;
+      });
     }, 0);
     const timer = window.setTimeout(() => {
       setSpeechAgentIds((prev) => {
+        if (!prev.has(latest.id)) return prev;
         const next = new Set(prev);
         next.delete(latest.id);
         return next;
@@ -5121,13 +5288,19 @@ export function RetroOffice3D({
           ? "💻"
           : "☕";
     const addTimer = window.setTimeout(() => {
-      setMoodByAgentId((prev) => ({
-        ...prev,
-        [latest.id]: { emoji, ts: Date.now() },
-      }));
+      setMoodByAgentId((prev) => {
+        const ts = Date.now();
+        const current = prev[latest.id];
+        if (current?.emoji === emoji && current.ts === ts) return prev;
+        return {
+          ...prev,
+          [latest.id]: { emoji, ts },
+        };
+      });
     }, 0);
     const timer = window.setTimeout(() => {
       setMoodByAgentId((prev) => {
+        if (!(latest.id in prev)) return prev;
         const next = { ...prev };
         delete next[latest.id];
         return next;
@@ -5185,15 +5358,20 @@ export function RetroOffice3D({
           <Canvas
             key={canvasResetKey}
             orthographic
-            dpr={[0.85, 1.5]}
+            dpr={webglSafeMode ? [0.25, 0.35] : [0.25, 0.35]}
             camera={{
               position: CAM_POS,
               zoom: cameraZoom,
               near: 0.1,
               far: 100,
             }}
-            shadows={{ type: THREE.PCFShadowMap }}
-            gl={{ antialias: true, powerPreference: "high-performance" }}
+            shadows={false}
+            gl={{
+              antialias: false,
+              failIfMajorPerformanceCaveat: false,
+              alpha: true,
+              powerPreference: "low-power",
+            }}
             style={{ width: "100%", height: "100%" }}
             onPointerUp={() => {
               if (drag.kind === "moving") setDrag({ kind: "idle" });
@@ -5201,6 +5379,10 @@ export function RetroOffice3D({
           >
             {/* Ensure camera looks at the active office target after mount. */}
             <CameraRig target={cameraTarget} />
+            <WebGlContextRecovery
+              onContextLost={handleWebglContextLost}
+              onContextRestored={handleWebglContextRestored}
+            />
             <AdaptiveDprController />
 
             {/* Orbit / pan / zoom controls — disabled while follow cam is active or while editing furniture. */}
@@ -5253,7 +5435,7 @@ export function RetroOffice3D({
               position={[8, 14, 6]}
               intensity={1.1}
               color="#f6f1e6"
-              castShadow
+              castShadow={!webglSafeMode}
               shadow-mapSize={[1024, 1024]}
               shadow-bias={-0.0002}
               shadow-normalBias={0.02}
@@ -5269,11 +5451,6 @@ export function RetroOffice3D({
 
             {/* Wall pictures — procedural, no async loading. */}
             <SceneWallPictures showRemoteOffice={remoteOfficeEnabled} />
-
-            {/* Environment lighting — async, wrapped in its own Suspense so floor stays visible. */}
-            <Suspense fallback={null}>
-              <Environment preset="city" />
-            </Suspense>
 
             {/* Furniture models — each loads its GLB asynchronously. */}
             <Suspense fallback={null}>
@@ -5830,6 +6007,12 @@ export function RetroOffice3D({
           </Canvas>
         ) : null}
       </div>
+
+      {webglContextLost && !immersiveOverlayActive ? (
+        <div className="pointer-events-none absolute bottom-3 left-3 z-30 rounded-md border border-amber-500/30 bg-[#120d08]/90 px-3 py-2 text-[11px] text-amber-100 shadow-lg backdrop-blur-sm">
+          3D renderer herstelt...
+        </div>
+      ) : null}
 
       {/* New Idea 2: Camera preset buttons — top left. */}
       {!readOnly && !immersiveOverlayActive ? (
@@ -7148,6 +7331,7 @@ export function RetroOffice3D({
                 onVoiceRepliesPreview={(voiceId, voiceName) =>
                   onVoiceRepliesPreview?.(voiceId, voiceName)
                 }
+                voiceRepliesProvider={voiceRepliesProvider}
               />
             </div>
           </div>
