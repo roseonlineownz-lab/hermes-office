@@ -119,6 +119,10 @@ upstream open url
 connect.challenge
 ```
 
+## 6.1) Kaggle/Colab operational assets
+
+- [Kaggle/Colab inventory + smoke checks](/home/faramix/work/NovaMaster/docs/kaggle_colab_inventory.md)
+
 ## 7) Commitstatus rond render-stability (reference)
 
 Recente stabiliteitsfixen zitten in commit:
