@@ -490,6 +490,10 @@ export class GatewayBrowserClient {
 
   private async sendConnect() {
     if (this.connectSent) return;
+    if (!this.connectNonce) {
+      gatewayBrowserDebugLog("send-connect:waiting-challenge");
+      return;
+    }
     this.connectSent = true;
     if (this.connectTimer !== null) {
       window.clearTimeout(this.connectTimer);
@@ -645,7 +649,7 @@ export class GatewayBrowserClient {
         if (nonce) {
           this.connectNonce = nonce;
         }
-        if (nonce || this.opts.disableDeviceAuth) {
+        if (nonce) {
           void this.sendConnect();
         }
         return;

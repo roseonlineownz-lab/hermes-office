@@ -241,6 +241,16 @@ const EMPTY_NUMBER_RECORD: Record<string, number> = {};
 const EMPTY_MONITOR_MAP: OfficeDeskMonitorMap = {};
 const EMPTY_CLEANING_CUES: OfficeCleaningCue[] = [];
 const EMPTY_FEED_EVENTS: FeedEvent[] = [];
+const CLAW3D_STABLE_DPR_MIN = 1;
+const CLAW3D_STABLE_DPR_MAX = 2;
+const CLAW3D_SAFE_DPR_RANGE: [number, number] = [0.5, 0.9];
+const CLAW3D_HIDDEN_DPR = 0.6;
+
+const resolveClaw3dVisibleDpr = (maxDpr = CLAW3D_STABLE_DPR_MAX) =>
+  Math.min(
+    Math.max(window.devicePixelRatio || CLAW3D_STABLE_DPR_MIN, CLAW3D_STABLE_DPR_MIN),
+    maxDpr,
+  );
 
 type DragState =
   | { kind: "idle" }
@@ -798,14 +808,14 @@ function AdaptiveDprController() {
     const applyDpr = (nextDpr: number) => {
       setDpr(Number(nextDpr.toFixed(2)));
     };
-    const initialDpr = 0.5;
+    const initialDpr = resolveClaw3dVisibleDpr();
     applyDpr(initialDpr);
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible") {
-        applyDpr(0.35);
+        applyDpr(CLAW3D_HIDDEN_DPR);
         return;
       }
-      const restoredDpr = 0.5;
+      const restoredDpr = resolveClaw3dVisibleDpr();
       applyDpr(restoredDpr);
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -839,7 +849,7 @@ function WebGlContextRecovery({
     const handleContextRestored = () => {
       if (webglStateRef.current === "ok") return;
       webglStateRef.current = "ok";
-      const restoredDpr = Math.min(window.devicePixelRatio || 1, 1);
+      const restoredDpr = resolveClaw3dVisibleDpr();
       gl.setPixelRatio(restoredDpr);
       gl.info.reset();
       setDpr(restoredDpr);
@@ -2734,24 +2744,47 @@ export function RetroOffice3D({
     () => ({ pos: CAM_POS, target: cameraTarget, zoom: cameraZoom }),
     [CAM_POS, cameraTarget, cameraZoom]
   );
+  const [webglRecoveryEpoch, setWebglRecoveryEpoch] = useState(0);
+  const webglRecoveryTimerRef = useRef<number | null>(null);
   const canvasResetKey = useMemo(
     () =>
       [
         remoteOfficeEnabled ? "remote" : "local",
         String(officeCenterSignal),
+        String(webglRecoveryEpoch),
       ].join(":"),
-    [officeCenterSignal, remoteOfficeEnabled],
+    [officeCenterSignal, remoteOfficeEnabled, webglRecoveryEpoch],
   );
   const [webglContextLost, setWebglContextLost] = useState(false);
   const [webglSafeMode, setWebglSafeMode] = useState(false);
   const handleWebglContextLost = useCallback(() => {
     setWebglSafeMode((current) => (current ? current : true));
     setWebglContextLost((current) => (current ? current : true));
+    if (webglRecoveryTimerRef.current !== null) return;
+    webglRecoveryTimerRef.current = window.setTimeout(() => {
+      webglRecoveryTimerRef.current = null;
+      setWebglRecoveryEpoch((current) => current + 1);
+      setWebglContextLost(false);
+      console.warn("[claw3d] WebGL context recovery timeout, remounting Canvas.");
+    }, 3500);
   }, []);
   const handleWebglContextRestored = useCallback(() => {
+    if (webglRecoveryTimerRef.current !== null) {
+      window.clearTimeout(webglRecoveryTimerRef.current);
+      webglRecoveryTimerRef.current = null;
+    }
     setWebglSafeMode((current) => (current ? false : current));
     setWebglContextLost((current) => (current ? false : current));
   }, []);
+  useEffect(
+    () => () => {
+      if (webglRecoveryTimerRef.current !== null) {
+        window.clearTimeout(webglRecoveryTimerRef.current);
+        webglRecoveryTimerRef.current = null;
+      }
+    },
+    [],
+  );
   // New Idea 7: heatmap mode.
   const [heatmapMode, setHeatmapMode] = useState(false);
   const [trailMode, setTrailMode] = useState(false);
@@ -5358,7 +5391,11 @@ export function RetroOffice3D({
           <Canvas
             key={canvasResetKey}
             orthographic
-            dpr={webglSafeMode ? [0.25, 0.35] : [0.25, 0.35]}
+            dpr={
+              webglSafeMode
+                ? CLAW3D_SAFE_DPR_RANGE
+                : [CLAW3D_STABLE_DPR_MIN, CLAW3D_STABLE_DPR_MAX]
+            }
             camera={{
               position: CAM_POS,
               zoom: cameraZoom,
@@ -5367,10 +5404,10 @@ export function RetroOffice3D({
             }}
             shadows={false}
             gl={{
-              antialias: false,
+              antialias: !webglSafeMode,
               failIfMajorPerformanceCaveat: false,
               alpha: true,
-              powerPreference: "low-power",
+              powerPreference: webglSafeMode ? "low-power" : "high-performance",
             }}
             style={{ width: "100%", height: "100%" }}
             onPointerUp={() => {

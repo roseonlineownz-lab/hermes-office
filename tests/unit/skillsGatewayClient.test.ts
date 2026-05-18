@@ -98,6 +98,37 @@ describe("skills gateway client", () => {
     expect(client.call).not.toHaveBeenCalled();
   });
 
+  it("does not crash when gateway returns non-string workspace provenance fields", async () => {
+    const report = {
+      workspaceDir: "/home/pi/.openclaw/workspace",
+      managedSkillsDir: "/home/pi/.openclaw/skills",
+      skills: [],
+    };
+    const client = {
+      call: vi.fn(async (method: string) => {
+        if (method === "skills.status") {
+          return report;
+        }
+        if (method === "agents.files.get") {
+          return {
+            workspace: { invalid: true },
+            file: {
+              missing: false,
+              content: "# AGENT",
+              path: { invalid: true },
+            },
+          };
+        }
+        throw new Error(`Unexpected method: ${method}`);
+      }),
+    } as unknown as GatewayClient;
+
+    const result = await loadAgentSkillStatus(client, "main");
+
+    expect(result).toBe(report);
+    expect(client.call).toHaveBeenCalledTimes(4);
+  });
+
   it("installs skill dependencies with normalized params", async () => {
     const response = {
       ok: true,
@@ -135,6 +166,18 @@ describe("skills gateway client", () => {
     await expect(installSkill(client, { name: "browser", installId: " " })).rejects.toThrow(
       "Install option id is required to install dependencies."
     );
+    await expect(
+      installSkill(client, {
+        name: undefined as unknown as string,
+        installId: "install-browser",
+      })
+    ).rejects.toThrow("Skill name is required to install dependencies.");
+    await expect(
+      installSkill(client, {
+        name: "browser",
+        installId: null as unknown as string,
+      })
+    ).rejects.toThrow("Install option id is required to install dependencies.");
     expect(client.call).not.toHaveBeenCalled();
   });
 
@@ -189,6 +232,12 @@ describe("skills gateway client", () => {
     await expect(updateSkill(client, { skillKey: " ", apiKey: "token" })).rejects.toThrow(
       "Skill key is required to update skill setup."
     );
+    await expect(
+      updateSkill(client, {
+        skillKey: undefined as unknown as string,
+        apiKey: "token",
+      })
+    ).rejects.toThrow("Skill key is required to update skill setup.");
     expect(client.call).not.toHaveBeenCalled();
   });
 });

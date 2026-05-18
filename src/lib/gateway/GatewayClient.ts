@@ -972,8 +972,12 @@ export const useGatewayConnection = (
       let lastError: unknown = null;
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
         try {
+          const transportGatewayUrl =
+            selectedAdapterType === "hermes"
+              ? gatewayUrl
+              : resolveStudioProxyGatewayUrl();
           await client.connect({
-            gatewayUrl: resolveStudioProxyGatewayUrl(),
+            gatewayUrl: transportGatewayUrl,
             token,
             authScopeKey: gatewayUrl,
             clientName: resolveGatewayClientName(selectedAdapterType, gatewayUrl),

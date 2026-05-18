@@ -107,34 +107,37 @@ export type PackagedSkillInstallResult = {
   skillKey: string;
 };
 
-const resolveAgentId = (agentId: string): string => {
-  const trimmed = agentId.trim();
+const normalizeOptionalString = (value: unknown): string =>
+  typeof value === "string" ? value.trim() : "";
+
+const resolveAgentId = (agentId: unknown): string => {
+  const trimmed = normalizeOptionalString(agentId);
   if (!trimmed) {
     throw new Error("Agent id is required to load skill status.");
   }
   return trimmed;
 };
 
-const resolveRequiredValue = (value: string, message: string): string => {
-  const trimmed = value.trim();
+const resolveRequiredValue = (value: unknown, message: string): string => {
+  const trimmed = normalizeOptionalString(value);
   if (!trimmed) {
     throw new Error(message);
   }
   return trimmed;
 };
 
-const isLikelyRootWorkspace = (workspaceDir: string): boolean => {
-  const normalized = workspaceDir.trim().replace(/[\\/]+$/, "");
+const isLikelyRootWorkspace = (workspaceDir: unknown): boolean => {
+  const normalized = normalizeOptionalString(workspaceDir).replace(/[\\/]+$/, "");
   if (!normalized) return false;
   return /[\\/]workspace$/i.test(normalized);
 };
 
 const resolveWorkspaceDirFromPath = (filePath: string | null | undefined): string | null => {
-  const normalized = filePath?.trim().replace(/[\\/]+$/, "") ?? "";
+  const normalized = normalizeOptionalString(filePath).replace(/[\\/]+$/, "");
   if (!normalized) return null;
   const index = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
   if (index <= 0) return null;
-  const candidate = normalized.slice(0, index).trim();
+  const candidate = normalizeOptionalString(normalized.slice(0, index));
   if (!candidate || isLikelyRootWorkspace(candidate)) {
     return null;
   }
@@ -148,7 +151,7 @@ export const resolveWorkspaceFromAgentFiles = async (
   for (const name of ["IDENTITY.md", "SOUL.md", "AGENTS.md"] as const) {
     try {
       const file = await readGatewayAgentFile({ client, agentId, name });
-      const workspace = file.workspace?.trim() ?? "";
+      const workspace = normalizeOptionalString(file.workspace);
       if (workspace && !isLikelyRootWorkspace(workspace)) {
         return workspace;
       }
@@ -171,8 +174,8 @@ export const loadAgentSkillStatus = async (
   const report = await client.call<SkillStatusReport>("skills.status", {
     agentId: resolvedAgentId,
   });
-  const workspaceDir = report.workspaceDir?.trim() ?? "";
-  if (!workspaceDir || !isLikelyRootWorkspace(workspaceDir)) {
+  const workspaceDir = normalizeOptionalString(report.workspaceDir);
+  if (workspaceDir && !isLikelyRootWorkspace(workspaceDir)) {
     return report;
   }
   const recoveredWorkspace = await resolveWorkspaceFromAgentFiles(

@@ -11,18 +11,21 @@ const display = Bebas_Neue({
   variable: "--font-display",
   weight: "400",
   subsets: ["latin"],
+  preload: false,
 });
 
 const sans = IBM_Plex_Sans({
   variable: "--font-sans",
   weight: ["400", "500", "600", "700"],
   subsets: ["latin"],
+  preload: false,
 });
 
 const mono = IBM_Plex_Mono({
   variable: "--font-mono",
   weight: ["400", "500", "600"],
   subsets: ["latin"],
+  preload: false,
 });
 
 export default function RootLayout({
@@ -33,10 +36,6 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <meta
-          httpEquiv="Content-Security-Policy"
-          content="default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; img-src 'self' data: blob: http: https:; font-src 'self' data: https:; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; connect-src 'self' ws: wss: http: https:; media-src 'self' blob: data: http: https:; worker-src 'self' blob:; object-src 'none'; upgrade-insecure-requests"
-        />
         <script
           dangerouslySetInnerHTML={{
             __html:

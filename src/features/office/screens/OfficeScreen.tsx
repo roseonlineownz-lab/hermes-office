@@ -324,6 +324,9 @@ const formatOpenClawValue = (value: string | null | undefined) => {
   return trimmed || "-";
 };
 
+const normalizeSkillField = (value: unknown) =>
+  (typeof value === "string" ? value.trim().toLowerCase() : "");
+
 const areModelChoicesEqual = (a: GatewayModelChoice[], b: GatewayModelChoice[]) => {
   if (a.length !== b.length) return false;
   return a.every((entry, index) => {
@@ -1378,11 +1381,27 @@ export function OfficeScreen({
   useEffect(() => {
     if (selectedAdapterType !== "custom") return;
     if (!gatewayUrl.trim()) return;
+    const trimmedGatewayUrl = gatewayUrl.trim();
+    if (trimmedGatewayUrl.startsWith("ws://") || trimmedGatewayUrl.startsWith("wss://")) {
+      // A websocket gateway URL should not use the local custom-runtime
+      // HTTP hydration path. Fall back to Hermes gateway mode.
+      console.info(
+        "[Claw3D] custom adapter selected with websocket gateway; switching to hermes adapter",
+        { gatewayUrl: trimmedGatewayUrl },
+      );
+      setSelectedAdapterType("hermes");
+      setLoading(false);
+      setError(null);
+      return;
+    }
     if (agentsLoaded && state.agents.length > 0) return;
     let cancelled = false;
     const timeoutId = window.setTimeout(() => {
       const controller = new AbortController();
-      const normalizedBaseUrl = gatewayUrl.replace(/^ws:/, "http:").replace(/^wss:/, "https:").replace(/\/+$/, "");
+      const normalizedBaseUrl = gatewayUrl
+        .replace(/^ws:/, "http:")
+        .replace(/^wss:/, "https:")
+        .replace(/\/+$/, "");
       fetch(`${normalizedBaseUrl}/state`, {
         cache: "no-store",
         signal: controller.signal,
@@ -1432,7 +1451,9 @@ export function OfficeScreen({
           if (cancelled) return;
           console.error("[Claw3D] local custom runtime hydration failed", error);
           setLocalClaw3dOfficeAgents([]);
-          setError(error instanceof Error ? error.message : String(error));
+          // Keep Office usable when custom runtime probe fails; the main
+          // gateway connection can still recover and hydrate state.
+          setError(null);
           setLoading(false);
         });
       return () => controller.abort();
@@ -1447,6 +1468,7 @@ export function OfficeScreen({
     gatewayUrl,
     hydrateAgents,
     selectedAdapterType,
+    setSelectedAdapterType,
     setError,
     setLoading,
     state.agents.length,
@@ -4149,6 +4171,14 @@ export function OfficeScreen({
       .toLowerCase()
       .includes(normalizedOpenClawConsoleSearch);
   }, [normalizedOpenClawConsoleSearch, openClawLiveStateText]);
+  const openClawConsoleExportEvents = useMemo(() => {
+    if (filteredOpenClawLogEntries.length > 0 || openClawLogEntries.length === 0) {
+      return filteredOpenClawLogEntries;
+    }
+    return openClawLogEntries;
+  }, [filteredOpenClawLogEntries, openClawLogEntries]);
+  const openClawConsoleExportUsedFallback =
+    openClawConsoleExportEvents !== filteredOpenClawLogEntries;
   const openClawConsoleExportJson = useMemo(
     () =>
       safeJsonStringify({
@@ -4156,12 +4186,15 @@ export function OfficeScreen({
         searchQuery: openClawConsoleSearch,
         visibleEventCount: filteredOpenClawLogEntries.length,
         totalEventCount: openClawLogEntries.length,
+        fallbackToFullEventBuffer: openClawConsoleExportUsedFallback,
         liveStateMatchesSearch: openClawLiveStateMatchesSearch,
         liveStateText: openClawLiveStateText,
-        events: filteredOpenClawLogEntries,
+        events: openClawConsoleExportEvents,
       }),
     [
-      filteredOpenClawLogEntries,
+      filteredOpenClawLogEntries.length,
+      openClawConsoleExportEvents,
+      openClawConsoleExportUsedFallback,
       openClawConsoleSearch,
       openClawLiveStateMatchesSearch,
       openClawLiveStateText,
@@ -4231,8 +4264,8 @@ export function OfficeScreen({
   const githubSkill = useMemo<SkillStatusEntry | null>(
     () =>
       marketplace.skillsReport?.skills.find((skill) => {
-        const normalizedKey = skill.skillKey.trim().toLowerCase();
-        const normalizedName = skill.name.trim().toLowerCase();
+        const normalizedKey = normalizeSkillField(skill.skillKey);
+        const normalizedName = normalizeSkillField(skill.name);
         return normalizedKey === "github" || normalizedName === "github";
       }) ?? null,
     [marketplace.skillsReport],
@@ -4240,8 +4273,8 @@ export function OfficeScreen({
   const soundclawSkill = useMemo<SkillStatusEntry | null>(
     () =>
       marketplace.skillsReport?.skills.find((skill) => {
-        const normalizedKey = skill.skillKey.trim().toLowerCase();
-        const normalizedName = skill.name.trim().toLowerCase();
+        const normalizedKey = normalizeSkillField(skill.skillKey);
+        const normalizedName = normalizeSkillField(skill.name);
         return normalizedKey === "soundclaw" || normalizedName === "soundclaw";
       }) ?? null,
     [marketplace.skillsReport],
@@ -4249,8 +4282,8 @@ export function OfficeScreen({
   const taskManagerSkill = useMemo<SkillStatusEntry | null>(
     () =>
       marketplace.skillsReport?.skills.find((skill) => {
-        const normalizedKey = skill.skillKey.trim().toLowerCase();
-        const normalizedName = skill.name.trim().toLowerCase();
+        const normalizedKey = normalizeSkillField(skill.skillKey);
+        const normalizedName = normalizeSkillField(skill.name);
         return normalizedKey === "task-manager" || normalizedName === "task-manager";
       }) ?? null,
     [marketplace.skillsReport],

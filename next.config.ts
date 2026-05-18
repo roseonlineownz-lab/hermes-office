@@ -50,6 +50,7 @@ if (process.env.NODE_ENV === "production") {
 }
 
 const nextConfig: NextConfig = {
+  reactStrictMode: false,
   outputFileTracingRoot: path.resolve(__dirname),
   async headers() {
     return [

@@ -212,4 +212,57 @@ describe("skills install gateway", () => {
       workspace: "/home/pi/.openclaw/workspace-main",
     });
   });
+
+  it("derives workspace from managedSkillsDir when workspaceDir is missing", async () => {
+    const call = vi.fn(async (method: string) => {
+      if (method === "agents.create") {
+        return { agentId: "installer-4" };
+      }
+      if (method === "config.get") {
+        return {
+          exists: true,
+          hash: "hash-4",
+          config: {
+            agents: {
+              list: [{ id: "installer-4", tools: {} }],
+            },
+          },
+        };
+      }
+      if (method === "config.set") {
+        return { ok: true };
+      }
+      if (method === "config.patch") {
+        return { ok: true };
+      }
+      if (method === "agents.list") {
+        return { mainKey: "main" };
+      }
+      if (method === "chat.send") {
+        return { runId: "run-4", status: "started" };
+      }
+      if (method === "agent.wait") {
+        return { ok: true };
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    const result = await installPackagedSkillViaGatewayAgent({
+      client: { call } as unknown as GatewayClient,
+      request: {
+        packageId: "task-manager",
+        source: "openclaw-workspace",
+        workspaceDir: "",
+        managedSkillsDir: "/home/pi/project-main/skills",
+        agentId: "main",
+        agentName: "main",
+      },
+    });
+
+    expect(result.installedPath).toBe("/home/pi/project-main/skills/task-manager");
+    expect(call).toHaveBeenCalledWith("agents.create", {
+      name: expect.stringContaining("Skill Installer"),
+      workspace: "/home/pi/project-main",
+    });
+  });
 });

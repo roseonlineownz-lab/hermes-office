@@ -11,15 +11,16 @@ import {
   type PackagedSkillInstallResult,
 } from "@/lib/skills/types";
 
-const normalizeRequired = (value: string, field: string): string => {
-  const trimmed = value.trim();
+const normalizeRequired = (value: unknown, field: string): string => {
+  const trimmed = typeof value === "string" ? value.trim() : "";
   if (!trimmed) {
     throw new Error(`${field} is required.`);
   }
   return trimmed;
 };
 
-const normalizeOptional = (value: string | undefined | null): string => value?.trim() ?? "";
+const normalizeOptional = (value: unknown): string =>
+  typeof value === "string" ? value.trim() : "";
 
 const getPathLeaf = (value: string): string => {
   const normalized = value.replace(/[\\/]+$/, "");
@@ -30,6 +31,14 @@ const getPathLeaf = (value: string): string => {
 const isRootWorkspace = (workspaceDir: string) => {
   const leaf = getPathLeaf(workspaceDir).toLowerCase();
   return leaf === "workspace";
+};
+
+const deriveWorkspaceFromManagedSkillsDir = (value: unknown): string => {
+  const trimmed = normalizeOptional(value);
+  if (!trimmed) return "";
+  const normalized = trimmed.replace(/[\\/]+$/, "");
+  const derived = normalized.replace(/[\\/]skills$/i, "");
+  return derived === normalized ? "" : derived;
 };
 
 const validateWorkspaceInstallTarget = (params: {
@@ -103,16 +112,23 @@ export const installPackagedSkillViaGatewayAgent = async (params: {
     throw new Error("Gateway-native packaged install currently supports workspace skills only.");
   }
 
-  let workspaceDir = normalizeRequired(params.request.workspaceDir, "workspaceDir");
-  if (isRootWorkspace(workspaceDir) && normalizeOptional(params.request.agentId)) {
+  const normalizedAgentId = normalizeOptional(params.request.agentId);
+  let workspaceDir = normalizeOptional(params.request.workspaceDir);
+  if ((!workspaceDir || isRootWorkspace(workspaceDir)) && normalizedAgentId) {
     const recoveredWorkspace = await resolveWorkspaceFromAgentFiles(
       params.client,
-      normalizeOptional(params.request.agentId)
+      normalizedAgentId
     );
     if (recoveredWorkspace) {
       workspaceDir = recoveredWorkspace;
     }
   }
+  if (!workspaceDir) {
+    workspaceDir = deriveWorkspaceFromManagedSkillsDir(
+      params.request.managedSkillsDir
+    );
+  }
+  workspaceDir = normalizeRequired(workspaceDir, "workspaceDir");
   validateWorkspaceInstallTarget({
     workspaceDir,
     agentId: params.request.agentId,

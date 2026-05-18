@@ -56,11 +56,17 @@ const readJsonFile = (filePath) => {
   return JSON.parse(raw);
 };
 
-const DEFAULT_GATEWAY_URL = "ws://localhost:18793";
+const DEFAULT_GATEWAY_URL = "ws://localhost:18789";
 const OPENCLAW_CONFIG_FILENAME = "openclaw.json";
 const ENV_TOKEN_REF_PREFIX = "ref:env:";
 
 const isRecord = (value) => Boolean(value && typeof value === "object");
+
+const normalizeLegacyGatewayUrl = (rawUrl) => {
+  const url = typeof rawUrl === "string" ? rawUrl.trim() : "";
+  if (!url) return "";
+  return url.replace("ws://localhost:18793", "ws://localhost:18789");
+};
 
 const resolveTokenValue = (rawToken, env = process.env) => {
   const token = typeof rawToken === "string" ? rawToken.trim() : "";
@@ -97,7 +103,7 @@ const loadUpstreamGatewaySettings = (env = process.env) => {
   const settingsPath = resolveStudioSettingsPath(env);
   const parsed = readJsonFile(settingsPath);
   const gateway = parsed && typeof parsed === "object" ? parsed.gateway : null;
-  const url = typeof gateway?.url === "string" ? gateway.url.trim() : "";
+  const url = normalizeLegacyGatewayUrl(gateway?.url);
   const token = resolveTokenValue(gateway?.token, env);
   const adapterType =
     typeof gateway?.adapterType === "string" && gateway.adapterType.trim()
@@ -110,7 +116,7 @@ const loadUpstreamGatewaySettings = (env = process.env) => {
     const defaults = readOpenclawGatewayDefaults(env);
     if (defaults) {
       return {
-        url: url || defaults.url,
+        url: url || normalizeLegacyGatewayUrl(defaults.url),
         token: defaults.token,
         adapterType,
         settingsPath,

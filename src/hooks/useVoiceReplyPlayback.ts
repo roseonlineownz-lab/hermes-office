@@ -29,6 +29,7 @@ export const useVoiceReplyPlayback = (params: {
   const audioUrlRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
+  const elevenLabsFallbackWarnedRef = useRef(false);
   const [playing, setPlaying] = useState(false);
 
   const releaseAudio = useCallback(() => {
@@ -175,24 +176,50 @@ export const useVoiceReplyPlayback = (params: {
 
   const requestAudio = useCallback(
     async (request: VoiceReplyPlaybackRequest, signal: AbortSignal) => {
-      const response = await fetch("/api/office/voice/reply", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          text: request.text,
-          provider: request.provider ?? provider,
-          voiceId: request.voiceId ?? voiceId,
-          speed: request.speed ?? speed,
-        }),
-        signal,
-      });
+      const runVoiceRequest = async (effectiveProvider: VoiceReplyProvider) =>
+        fetch("/api/office/voice/reply", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text: request.text,
+            provider: effectiveProvider,
+            voiceId: request.voiceId ?? voiceId,
+            speed: request.speed ?? speed,
+          }),
+          signal,
+        });
+      const initialProvider = (request.provider ?? provider) as VoiceReplyProvider;
+      let response = await runVoiceRequest(initialProvider);
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as
           | { error?: string }
           | null;
-        throw new Error(body?.error?.trim() || "Voice reply request failed.");
+        const errorMessage =
+          typeof body?.error === "string" ? body.error.trim() : "Voice reply request failed.";
+        if (
+          initialProvider === "elevenlabs" &&
+          errorMessage.includes("Missing ELEVENLABS_API_KEY")
+        ) {
+          if (!elevenLabsFallbackWarnedRef.current) {
+            elevenLabsFallbackWarnedRef.current = true;
+            console.warn(
+              "ELEVENLABS_API_KEY ontbreekt; voice replies vallen terug op VibeVoice."
+            );
+          }
+          response = await runVoiceRequest("vibevoice");
+        } else {
+          throw new Error(errorMessage);
+        }
+      }
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        const errorMessage =
+          typeof body?.error === "string" ? body.error.trim() : "Voice reply request failed.";
+        throw new Error(errorMessage);
       }
       return response.blob();
     },
