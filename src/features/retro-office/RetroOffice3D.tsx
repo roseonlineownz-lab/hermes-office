@@ -2884,14 +2884,30 @@ export function RetroOffice3D({
   }, [agents, officeActionStatus?.active, officeActionStatus?.recent]);
   const actionBubbleTextByAgentId = useMemo(() => {
     const next: Record<string, string> = {};
+    const roomLabel = (action: OfficeActionSnapshot) => {
+      const normalizedRoom = normalizeActionRoom(action);
+      if (normalizedRoom === "qa_lab") return "QA Lab";
+      if (normalizedRoom === "server_room") return "Server";
+      if (normalizedRoom === "sms_booth") return "Leads";
+      if (normalizedRoom === "phone_booth") return "Phone";
+      if (normalizedRoom === "jukebox") return "Media";
+      if (normalizedRoom === "desk") return "Desk";
+      return action.identity?.label ?? action.agent ?? "Nova";
+    };
+    const compact = (value: string, max = 48) => {
+      const safe = value.replace(/\s+/g, " ").replace(/[{};]/g, "").trim();
+      return safe.length > max ? `${safe.slice(0, max - 1)}…` : safe;
+    };
     for (const [agentId, action] of Object.entries(actionByAgentId)) {
       const status = action.status ?? "running";
-      const progress = typeof action.progress === "number" ? ` · ${action.progress}%` : "";
+      const progress = typeof action.progress === "number" ? ` ${action.progress}%` : "";
       const icon = status === "success" ? "✅" : status === "error" ? "⚠" : status === "waiting" ? "⏳" : "⚙";
-      next[agentId] = `${icon} ${action.title ?? "Nova action"}${progress}`;
+      const title = compact(action.title ?? "Nova action", 46);
+      const log = action.lastLog ? ` · ${compact(action.lastLog, 36)}` : "";
+      next[agentId] = compact(`${icon} ${roomLabel(action)}${progress} · ${title}${log}`, 112);
     }
     return next;
-  }, [actionByAgentId]);
+  }, [actionByAgentId, normalizeActionRoom]);
   const actionQaHoldByAgentId = useMemo(() => {
     const next: Record<string, boolean> = {};
     for (const [agentId, action] of Object.entries(actionByAgentId)) {

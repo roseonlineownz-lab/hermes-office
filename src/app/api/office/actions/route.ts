@@ -77,6 +77,21 @@ const asStatus = (value: unknown): OfficeAction["status"] => {
   return "unknown";
 };
 
+const ACTIVE_ACTION_TTL_MS = 20 * 60 * 1000;
+
+const actionAgeMs = (action: OfficeAction, nowMs: number): number | null => {
+  if (!action.time) return null;
+  const parsed = Date.parse(action.time);
+  return Number.isFinite(parsed) ? nowMs - parsed : null;
+};
+
+const isActiveAction = (action: OfficeAction, nowMs: number) => {
+  if (action.status !== "running" && action.status !== "waiting") return false;
+  const ageMs = actionAgeMs(action, nowMs);
+  if (ageMs === null) return true;
+  return ageMs <= ACTIVE_ACTION_TTL_MS;
+};
+
 const parseActionLine = (line: string): OfficeAction | null => {
   try {
     const payload = JSON.parse(line) as Record<string, unknown>;
@@ -118,7 +133,8 @@ export async function GET() {
       latestById.set(action.id, action);
     }
     const collapsed = Array.from(latestById.values());
-    const active = collapsed.filter((action) => action.status === "running" || action.status === "waiting");
+    const nowMs = Date.now();
+    const active = collapsed.filter((action) => isActiveAction(action, nowMs));
     return NextResponse.json({
       ok: true,
       source: ACTION_LOG,
