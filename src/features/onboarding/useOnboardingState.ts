@@ -4,7 +4,7 @@
  * Uses localStorage so the wizard only shows once per browser.
  * The key is scoped to the Claw3D app to avoid collisions.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const STORAGE_KEY = "claw3d:onboarding:completed";
 
@@ -40,7 +40,18 @@ export type OnboardingStateReturn = {
 };
 
 export const useOnboardingState = (): OnboardingStateReturn => {
-  const [completed, setCompleted] = useState<boolean>(readCompleted);
+  // Match the server-rendered tree on the first client render, then read
+  // localStorage after mount. Reading localStorage in the useState initializer
+  // can make the client render the modal while SSR omitted it, causing a
+  // hydration mismatch on /office.
+  const [completed, setCompleted] = useState<boolean>(true);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setCompleted(readCompleted());
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, []);
 
   const completeOnboarding = useCallback(() => {
     setCompleted(true);

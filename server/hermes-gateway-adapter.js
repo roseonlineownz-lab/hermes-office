@@ -467,26 +467,56 @@ const agentRegistry = new Map([
 async function syncBackendAgents() {
   try {
     const res = await fetch(`${CLAW3D_BACKEND_URL}/agents`);
-    if (!res.ok) return;
+    if (!res.ok) return { ok: false, count: agentRegistry.size, error: `backend_http_${res.status}` };
     const { data } = await res.json();
-    if (!data || typeof data !== "object") return;
+    if (!data || typeof data !== "object") return { ok: false, count: agentRegistry.size, error: "backend_agents_missing" };
     let added = 0;
+    let updated = 0;
     for (const [id, agent] of Object.entries(data)) {
-      if (agentRegistry.has(id)) continue; // don't overwrite main hermes
+      if (!id || !agent || typeof agent !== "object") continue;
       const workspace = resolveAgentRoot(id);
-      agentRegistry.set(id, {
+      const nextAgent = {
         id,
         name: agent.name || id,
         workspace,
         role: agent.task || agent.room || "",
         systemPrompt: buildAgentSystemPrompt(id, agent),
         settings: { wipe: false, continuity: true, model: agent.model || HERMES_MODEL },
-      });
-      added++;
+        backend: {
+          status: agent.status || "unknown",
+          room: agent.room || "",
+          task: agent.task || "",
+          progress: typeof agent.progress === "number" ? agent.progress : null,
+          preferredModel: agent.preferred_model || agent.model || HERMES_MODEL,
+          preferredProvider: agent.preferred_provider || "",
+          modelRole: agent.model_role || "",
+        },
+      };
+      if (id === AGENT_ID) {
+        const mainAgent = agentRegistry.get(AGENT_ID);
+        if (mainAgent) {
+          mainAgent.name = nextAgent.name || mainAgent.name;
+          mainAgent.role = nextAgent.role || mainAgent.role;
+          mainAgent.settings = { ...mainAgent.settings, model: nextAgent.settings.model || mainAgent.settings.model };
+          mainAgent.backend = nextAgent.backend;
+          updated++;
+        }
+        continue;
+      }
+      if (agentRegistry.has(id)) {
+        const existing = agentRegistry.get(id);
+        agentRegistry.set(id, { ...existing, ...nextAgent, settings: { ...existing.settings, ...nextAgent.settings } });
+        updated++;
+      } else {
+        agentRegistry.set(id, nextAgent);
+        added++;
+      }
     }
-    if (added > 0) console.log(`[hermes-adapter] Synced ${added} agent(s) from backend`);
-  } catch {
+    if (added > 0 || updated > 0) console.log(`[hermes-adapter] Synced backend agents: added=${added} updated=${updated} total=${agentRegistry.size}`);
+    return { ok: true, added, updated, count: agentRegistry.size };
+  } catch (err) {
     // Backend not available — not fatal, just skip
+    return { ok: false, count: agentRegistry.size, error: sanitizeErrorMessage(err) };
   }
 }
 
@@ -1186,12 +1216,23 @@ async function handleMethod(method, params, id, sendEvent) {
     // --- Agent management ---------------------------------------------------
 
     case "agents.list": {
+      const sync = await syncBackendAgents();
       const allAgents = [...agentRegistry.values()].map((agent) => ({
-        id: agent.id, name: agent.name, workspace: agent.workspace,
+        id: agent.id,
+        name: agent.name,
+        workspace: agent.workspace,
         identity: { name: agent.name, emoji: "🤖" },
         role: agent.role,
+        status: agent.backend?.status,
+        room: agent.backend?.room,
+        task: agent.backend?.task,
+        progress: agent.backend?.progress,
+        model: agent.settings?.model,
+        preferredModel: agent.backend?.preferredModel,
+        preferredProvider: agent.backend?.preferredProvider,
+        modelRole: agent.backend?.modelRole,
       }));
-      return resOk(id, { defaultId: AGENT_ID, mainKey: MAIN_KEY, agents: allAgents });
+      return resOk(id, { defaultId: AGENT_ID, mainKey: MAIN_KEY, agents: allAgents, sync });
     }
 
     case "agents.create": {
