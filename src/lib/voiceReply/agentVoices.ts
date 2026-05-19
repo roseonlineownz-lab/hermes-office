@@ -43,25 +43,31 @@ const VX_EN_MIKE = "en-Mike_man";
 
 const KOKORO_VOICES = {
   hermes: { nl: "am_adam", en: "am_adam" },
+  openclaw: { nl: "am_echo", en: "am_echo" },
   jarvis: { nl: "af_alloy", en: "af_alloy" },
+  office: { nl: "am_onyx", en: "am_onyx" },
   qa: { nl: "bf_alice", en: "bf_alice" },
   leadgen: { nl: "am_puck", en: "am_puck" },
   media: { nl: "bf_emma", en: "bf_emma" },
   freebuff: { nl: "af_heart", en: "af_heart" },
+  ops: { nl: "am_fenrir", en: "am_fenrir" },
 };
 
 const EDGE_VOICES = {
   hermes: { nl: "nl-NL-FennaNeural", en: "en-US-EmmaMultilingualNeural" },
+  openclaw: { nl: "nl-NL-MaartenNeural", en: "en-US-GuyNeural" },
   jarvis: { nl: "nl-NL-ColetteNeural", en: "en-US-BrianMultilingualNeural" },
+  office: { nl: "nl-NL-FennaNeural", en: "en-US-AriaNeural" },
   qa: { nl: "nl-NL-FennaNeural", en: "en-US-BrianMultilingualNeural" },
   leadgen: { nl: "nl-NL-ColetteNeural", en: "en-US-EmmaMultilingualNeural" },
   media: { nl: "nl-NL-FennaNeural", en: "en-US-EmmaMultilingualNeural" },
   freebuff: { nl: "nl-NL-ColetteNeural", en: "en-US-BrianMultilingualNeural" },
+  ops: { nl: "nl-NL-MaartenNeural", en: "en-US-GuyNeural" },
 };
 
 export const AGENT_VOICE_PROFILES: Record<string, AgentVoiceProfile> = {
   hermes: {
-    agentAliases: ["hermes", "orchestrator", "planner"],
+    agentAliases: ["hermes", "hermes-gateway", "hermes-office", "office-adapter", "codex", "orchestrator", "planner"],
     label: "Hermes Orchestrator",
     defaultProvider: "kokoro",
     voices: {
@@ -71,8 +77,19 @@ export const AGENT_VOICE_PROFILES: Record<string, AgentVoiceProfile> = {
     },
     style: "calm, concise operator voice",
   },
+  openclaw: {
+    agentAliases: ["openclaw", "goclaw", "metaclaw", "clawmem", "claw"],
+    label: "OpenClaw Runtime",
+    defaultProvider: "kokoro",
+    voices: {
+      vibevoice: { nl: VX_NL_MAN, en: VX_EN_MIKE },
+      kokoro: KOKORO_VOICES.openclaw,
+      edge: EDGE_VOICES.openclaw,
+    },
+    style: "direct runtime claw voice",
+  },
   jarvis: {
-    agentAliases: ["jarvis", "core", "command"],
+    agentAliases: ["jarvis", "mark", "aion", "core", "command"],
     label: "Jarvis Core",
     defaultProvider: "kokoro",
     voices: {
@@ -81,6 +98,17 @@ export const AGENT_VOICE_PROFILES: Record<string, AgentVoiceProfile> = {
       edge: EDGE_VOICES.jarvis,
     },
     style: "clear command-center voice",
+  },
+  office: {
+    agentAliases: ["office", "claw3d", "studio", "cockpit"],
+    label: "Claw3D Office",
+    defaultProvider: "kokoro",
+    voices: {
+      vibevoice: { nl: VX_NL_WOMAN, en: VX_EN_GRACE },
+      kokoro: KOKORO_VOICES.office,
+      edge: EDGE_VOICES.office,
+    },
+    style: "visible office floor voice",
   },
   qa: {
     agentAliases: ["qa", "test", "tester", "review", "coder", "code"],
@@ -94,7 +122,7 @@ export const AGENT_VOICE_PROFILES: Record<string, AgentVoiceProfile> = {
     style: "precise test-lab voice",
   },
   leadgen: {
-    agentAliases: ["leadgen", "lead", "sales", "outreach", "scout"],
+    agentAliases: ["leadgen", "lead", "sales", "outreach", "scout", "research"],
     label: "LeadGen",
     defaultProvider: "kokoro",
     voices: {
@@ -105,7 +133,7 @@ export const AGENT_VOICE_PROFILES: Record<string, AgentVoiceProfile> = {
     style: "fast commercial outreach voice",
   },
   media: {
-    agentAliases: ["media", "publisher", "viral", "video", "soundclaw"],
+    agentAliases: ["media", "publisher", "viral", "video", "voice", "livekit", "soundclaw"],
     label: "Media / SoundClaw",
     defaultProvider: "kokoro",
     voices: {
@@ -116,7 +144,7 @@ export const AGENT_VOICE_PROFILES: Record<string, AgentVoiceProfile> = {
     style: "energetic media voice",
   },
   freebuff: {
-    agentAliases: ["freebuff", "remote", "windows"],
+    agentAliases: ["freebuff", "gordon", "remote", "windows"],
     label: "Freebuff Remote",
     defaultProvider: "kokoro",
     voices: {
@@ -125,6 +153,17 @@ export const AGENT_VOICE_PROFILES: Record<string, AgentVoiceProfile> = {
       edge: EDGE_VOICES.freebuff,
     },
     style: "remote assistant voice",
+  },
+  ops: {
+    agentAliases: ["vps", "ops", "security", "firewall", "server", "error"],
+    label: "VPS / Ops Guard",
+    defaultProvider: "kokoro",
+    voices: {
+      vibevoice: { nl: VX_NL_MAN, en: VX_EN_MIKE },
+      kokoro: KOKORO_VOICES.ops,
+      edge: EDGE_VOICES.ops,
+    },
+    style: "firm infrastructure alert voice",
   },
 };
 
