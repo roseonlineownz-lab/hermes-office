@@ -62,6 +62,7 @@ import { useGatewayConfigSyncController } from "@/features/agents/operations/use
 import { useFinalizedAssistantReplyListener } from "@/hooks/useFinalizedAssistantReplyListener";
 import { useStudioVoiceRepliesPreference } from "@/hooks/useStudioVoiceRepliesPreference";
 import { useVoiceReplyPlayback } from "@/hooks/useVoiceReplyPlayback";
+import { detectOfficeSpeechLanguage, resolveAgentVoice } from "@/lib/voiceReply/agentVoices";
 import { isLocalGatewayUrl } from "@/lib/gateway/local-gateway";
 import type { ExecApprovalDecision, PendingExecApproval } from "@/features/agents/approvals/types";
 import {
@@ -855,12 +856,14 @@ const AgentsPageScreen = () => {
       setMobilePane("chat");
     },
   });
-  useFinalizedAssistantReplyListener(state.agents, ({ text }) => {
+  useFinalizedAssistantReplyListener(state.agents, ({ agentId, text }) => {
     if (!voiceRepliesLoaded || !voiceRepliesEnabled) return;
+    const agentVoice = resolveAgentVoice(agentId, detectOfficeSpeechLanguage(text));
     enqueueVoiceReply({
       text,
-      provider: voiceRepliesPreference.provider,
-      voiceId: voiceRepliesPreference.voiceId,
+      provider: voiceRepliesPreference.voiceId ? voiceRepliesPreference.provider : agentVoice.provider,
+      voiceId: voiceRepliesPreference.voiceId ?? agentVoice.voiceId,
+      speed: voiceRepliesPreference.speed,
     });
   });
   const handleChatSend = useCallback(

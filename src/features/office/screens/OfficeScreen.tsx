@@ -169,6 +169,7 @@ import {
   type VoiceSendPayload,
 } from "@/hooks/useVoiceRecorder";
 import { useVoiceReplyPlayback } from "@/hooks/useVoiceReplyPlayback";
+import { detectOfficeSpeechLanguage, resolveAgentVoice } from "@/lib/voiceReply/agentVoices";
 import {
   buildOfficeAnimationState,
   clearOfficeAnimationTriggerHold,
@@ -3894,12 +3895,14 @@ export function OfficeScreen({
     },
   });
 
-  useFinalizedAssistantReplyListener(state.agents, ({ text }) => {
+  useFinalizedAssistantReplyListener(state.agents, ({ agentId, text }) => {
     if (!voiceRepliesLoaded || !voiceRepliesEnabled) return;
+    const agentVoice = resolveAgentVoice(agentId, detectOfficeSpeechLanguage(text));
     enqueueVoiceReply({
       text,
-      provider: voiceRepliesPreference.provider,
-      voiceId: voiceRepliesPreference.voiceId,
+      provider: voiceRepliesPreference.voiceId ? voiceRepliesPreference.provider : agentVoice.provider,
+      voiceId: voiceRepliesPreference.voiceId ?? agentVoice.voiceId,
+      speed: voiceRepliesPreference.speed,
     });
   });
 
@@ -4312,8 +4315,11 @@ export function OfficeScreen({
     [selectedAdapterType, taskBoard.gatewayTasksSupported, taskManagerSkill],
   );
   const soundclawReady = useMemo(
-    () => (soundclawSkill ? deriveSkillReadinessState(soundclawSkill) === "ready" : false),
-    [soundclawSkill]
+    () =>
+      visibleSelectedAdapterType === "custom" ||
+      visibleSelectedAdapterType === "hermes" ||
+      (soundclawSkill ? deriveSkillReadinessState(soundclawSkill) === "ready" : false),
+    [visibleSelectedAdapterType, soundclawSkill]
   );
 
   useEffect(() => {

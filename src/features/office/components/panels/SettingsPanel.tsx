@@ -35,8 +35,8 @@ type SettingsPanelProps = {
   voiceRepliesVoiceId: string | null;
   voiceRepliesSpeed: number;
   voiceRepliesLoaded: boolean;
-  voiceRepliesProvider?: "vibevoice" | "kokoro";
-  onVoiceRepliesProviderChange?: (provider: "vibevoice" | "kokoro") => void;
+  voiceRepliesProvider?: "vibevoice" | "kokoro" | "edge";
+  onVoiceRepliesProviderChange?: (provider: "vibevoice" | "kokoro" | "edge") => void;
   onVoiceRepliesToggle: (enabled: boolean) => void;
   onVoiceRepliesVoiceChange: (voiceId: string | null) => void;
   onVoiceRepliesSpeedChange: (speed: number) => void;
@@ -465,6 +465,7 @@ export function SettingsPanel({
           {([
             { id: "vibevoice", label: "VibeVoice" },
             { id: "kokoro", label: "Kokoro" },
+            { id: "edge", label: "Edge NL/EN" },
           ] as const).map((provider) => {
             const selected = provider.id === voiceRepliesProvider;
             return (

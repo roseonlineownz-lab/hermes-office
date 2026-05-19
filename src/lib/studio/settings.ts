@@ -98,7 +98,7 @@ export type StudioAnalyticsPreferencePatch = {
   budgets?: Partial<StudioAnalyticsBudgetSettings>;
 };
 
-export type StudioVoiceRepliesProvider = "vibevoice" | "kokoro";
+export type StudioVoiceRepliesProvider = "vibevoice" | "kokoro" | "edge";
 
 export type StudioVoiceRepliesPreference = {
   enabled: boolean;
@@ -320,8 +320,8 @@ export const defaultStudioAnalyticsPreference = (): StudioAnalyticsPreference =>
 
 export const defaultStudioVoiceRepliesPreference =
   (): StudioVoiceRepliesPreference => ({
-    enabled: false,
-    provider: "vibevoice",
+    enabled: true,
+    provider: "kokoro",
     voiceId: null,
     speed: 1,
   });
@@ -440,8 +440,8 @@ const normalizeTaskBoardPreference = (
   };
 };
 
-const DEFAULT_OFFICE_TITLE = "Luke Headquarters";
-const DEFAULT_REMOTE_OFFICE_LABEL = "Remote Office";
+const DEFAULT_OFFICE_TITLE = "NovaMaster HQ";
+const DEFAULT_REMOTE_OFFICE_LABEL = "Shared Room";
 const DEFAULT_REMOTE_OFFICE_SOURCE_KIND = "presence_endpoint" as const;
 
 const normalizeOfficeTitle = (
@@ -932,7 +932,7 @@ const normalizeVoiceRepliesProvider = (
   fallback: StudioVoiceRepliesProvider = "vibevoice"
 ): StudioVoiceRepliesProvider => {
   const provider = coerceString(value);
-  if (provider === "vibevoice" || provider === "kokoro") {
+  if (provider === "vibevoice" || provider === "kokoro" || provider === "edge") {
     return provider;
   }
   return fallback;

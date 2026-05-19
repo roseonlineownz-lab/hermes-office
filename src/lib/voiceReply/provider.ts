@@ -1,4 +1,12 @@
-export type VoiceReplyProvider = "vibevoice" | "kokoro";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import * as path from "node:path";
+import { promisify } from "node:util";
+
+export type VoiceReplyProvider = "vibevoice" | "kokoro" | "edge";
+
+const execFileAsync = promisify(execFile);
 
 export type VoiceReplySynthesisRequest = {
   text: string;
@@ -14,6 +22,7 @@ const DEFAULT_VOICE_REPLY_PROVIDER: VoiceReplyProvider = (() => {
   const configured = process.env.OFFICE_VOICE_REPLY_PROVIDER;
   if (configured === "vibevoice") return "vibevoice";
   if (configured === "kokoro") return "kokoro";
+  if (configured === "edge") return "edge";
   return "vibevoice";
 })();
 const DEFAULT_VIBEVOICE_VOICE = process.env.VIBEVOICE_VOICE_ID || "en-Carter_man";
@@ -33,8 +42,8 @@ const normalizeVibeVoiceId = (value: string | null | undefined): string => {
 };
 
 const normalizeKokoroVoiceId = (value: string | null | undefined): string => {
-  const explicit = value;
-  if (explicit) return explicit;
+  const explicit = value?.trim();
+  if (explicit && /^(a|b)[fm]_[a-z0-9_]+$/i.test(explicit)) return explicit;
   return DEFAULT_KOKORO_VOICE;
 };
 
@@ -71,6 +80,12 @@ const synthesizeWithVibeVoice = async (
   return response;
 };
 
+const detectKokoroLanguage = (text: string): "en-us" | "nl" => {
+  return /\b(de|het|een|en|of|niet|wel|voor|met|zonder|vergadering|kantoor|taak|klaar|werkt|nederlands)\b/i.test(text)
+    ? "nl"
+    : "en-us";
+};
+
 const synthesizeWithKokoro = async (
   request: VoiceReplySynthesisRequest
 ): Promise<Response> => {
@@ -86,7 +101,7 @@ const synthesizeWithKokoro = async (
       input: request.text,
       voice,
       speed,
-      lang: "en-us",
+      lang: detectKokoroLanguage(request.text),
     }),
     cache: "no-store",
   });
@@ -97,17 +112,56 @@ const synthesizeWithKokoro = async (
   return response;
 };
 
+const normalizeEdgeVoiceId = (value: string | null | undefined, text: string): string => {
+  if (value) return value;
+  return detectKokoroLanguage(text) === "nl" ? "nl-NL-FennaNeural" : "en-US-EmmaMultilingualNeural";
+};
+
+const synthesizeWithEdgeTts = async (
+  request: VoiceReplySynthesisRequest
+): Promise<Response> => {
+  const voice = normalizeEdgeVoiceId(request.voiceId, request.text);
+  const speed = normalizeVoiceSpeed(request.speed);
+  const ratePct = Math.round((speed - 1) * 100);
+  const rate = `${ratePct >= 0 ? "+" : ""}${ratePct}%`;
+  const tmp = await mkdtemp(path.join(tmpdir(), "office-edge-tts-"));
+  const mediaPath = path.join(tmp, "reply.mp3");
+  try {
+    await execFileAsync("edge-tts", [
+      "--voice",
+      voice,
+      "--rate",
+      rate,
+      "--text",
+      request.text,
+      "--write-media",
+      mediaPath,
+    ], { timeout: 20_000, maxBuffer: 1024 * 1024 });
+    const data = await readFile(mediaPath);
+    return new Response(data, {
+      headers: { "Content-Type": "audio/mpeg" },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Edge TTS synthesis failed.";
+    throw new Error(`Edge TTS synthesis failed: ${message}`);
+  } finally {
+    await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 export const synthesizeVoiceReply = async (
   request: VoiceReplySynthesisRequest
 ): Promise<Response> => {
   const preferred = request.provider ?? DEFAULT_VOICE_REPLY_PROVIDER;
   const preferredProvider =
-    preferred === "vibevoice" || preferred === "kokoro"
+    preferred === "vibevoice" || preferred === "kokoro" || preferred === "edge"
       ? preferred
       : DEFAULT_VOICE_REPLY_PROVIDER;
   const candidateProviders: VoiceReplyProvider[] = preferredProvider === "vibevoice"
-    ? ["vibevoice", "kokoro"]
-    : ["kokoro", "vibevoice"];
+    ? ["vibevoice", "kokoro", "edge"]
+    : preferredProvider === "edge"
+      ? ["edge", "kokoro", "vibevoice"]
+      : ["kokoro", "edge", "vibevoice"];
 
   const errors: string[] = [];
   for (const provider of candidateProviders) {
@@ -117,6 +171,8 @@ export const synthesizeVoiceReply = async (
           return await synthesizeWithVibeVoice(request);
         case "kokoro":
           return await synthesizeWithKokoro(request);
+        case "edge":
+          return await synthesizeWithEdgeTts(request);
         default:
           throw new Error(`Unsupported voice reply provider: ${provider}.`);
       }

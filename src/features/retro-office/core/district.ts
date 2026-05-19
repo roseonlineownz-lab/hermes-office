@@ -26,21 +26,19 @@ export const CITY_PATH_ZONE: DistrictZone = {
   maxY: 980,
 };
 
-export const REMOTE_OFFICE_ZONE: DistrictZone = {
-  minX: 0,
-  maxX: LOCAL_OFFICE_CANVAS_WIDTH,
-  minY: 1020,
-  maxY: 1020 + LOCAL_OFFICE_CANVAS_HEIGHT,
-};
+// Remote participants are composited into the same physical office by default.
+// Keep the stable `remote:` ids for chat/routing, but route their visual bodies
+// to the local room instead of cloning a second office/floor.
+export const REMOTE_OFFICE_ZONE: DistrictZone = LOCAL_OFFICE_ZONE;
 
 export const REMOTE_ROAM_POINTS = [
-  { x: 800, y: 1220 },
-  { x: 850, y: 1520 },
-  { x: 820, y: 1600 },
-  { x: 450, y: 1440 },
-  { x: 250, y: 1440 },
-  { x: 650, y: 1440 },
-  { x: 150, y: 1640 },
+  { x: 800, y: 200 },
+  { x: 850, y: 500 },
+  { x: 820, y: 580 },
+  { x: 450, y: 420 },
+  { x: 250, y: 420 },
+  { x: 650, y: 420 },
+  { x: 150, y: 620 },
 ] as const;
 
 export const DISTRICT_CAMERA_POSITION: [number, number, number] = [14, 16, 18];

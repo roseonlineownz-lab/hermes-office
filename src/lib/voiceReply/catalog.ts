@@ -103,15 +103,40 @@ const CURATED_KOKORO_VOICES: CuratedVoiceOption[] = [
   },
 ];
 
+const CURATED_EDGE_VOICES: CuratedVoiceOption[] = [
+  {
+    id: "nl-NL-FennaNeural",
+    label: "Fenna NL",
+    description: "Dutch female voice for Nederlandse replies.",
+  },
+  {
+    id: "nl-NL-ColetteNeural",
+    label: "Colette NL",
+    description: "Dutch female voice with a different cadence.",
+  },
+  {
+    id: "en-US-EmmaMultilingualNeural",
+    label: "Emma multilingual",
+    description: "English/Dutch-capable multilingual voice.",
+  },
+  {
+    id: "en-US-BrianMultilingualNeural",
+    label: "Brian multilingual",
+    description: "English/Dutch-capable male voice.",
+  },
+];
+
 export const CURATED_VOICES_BY_PROVIDER = {
   elevenlabs: CURATED_ELEVENLABS_VOICES,
   vibevoice: CURATED_VIBEVOICE_VOICES,
   kokoro: CURATED_KOKORO_VOICES,
+  edge: CURATED_EDGE_VOICES,
 } satisfies Record<string, CuratedVoiceOption[]>;
 
 export const getVoicesForProvider = (provider: string): CuratedVoiceOption[] => {
   const value = provider.toLowerCase();
   if (value === "kokoro") return CURATED_KOKORO_VOICES;
+  if (value === "edge") return CURATED_EDGE_VOICES;
   if (value === "vibevoice") return CURATED_VIBEVOICE_VOICES;
   if (value === "elevenlabs") return CURATED_ELEVENLABS_VOICES;
   return CURATED_VIBEVOICE_VOICES;

@@ -57,6 +57,12 @@ import type { OfficeAnimationState } from "@/lib/office/eventTriggers";
 import type { StandupMeeting } from "@/lib/office/standup/types";
 import type { SkillStatusEntry } from "@/lib/skills/types";
 import type { StudioGatewayAdapterType } from "@/lib/studio/settings";
+import {
+  DEFAULT_OFFICE_SPEECH_LANGUAGE,
+  detectOfficeSpeechLanguage,
+  resolveAgentVoice,
+  type OfficeSpeechLanguage,
+} from "@/lib/voiceReply/agentVoices";
 import type { VoiceReplyProvider } from "@/lib/voiceReply/provider";
 import type {
   TaskBoardCard,
@@ -2536,6 +2542,7 @@ export function RetroOffice3D({
   voiceRepliesVoiceId = null,
   voiceRepliesSpeed = 1,
   voiceRepliesProvider = "vibevoice",
+  onVoiceRepliesProviderChange,
   voiceRepliesLoaded = false,
   onOfficeTitleChange,
   onRemoteOfficeEnabledChange,
@@ -2782,20 +2789,21 @@ export function RetroOffice3D({
       ),
     ),
   );
+  const renderRemoteOfficeDistrict = false;
   const defaultRemoteLayoutFurniture = useMemo(
     () =>
-      remoteOfficeEnabled
+      renderRemoteOfficeDistrict
         ? projectFurnitureIntoRemoteOfficeZone({
             furniture: furniture.filter((item) => !isRetiredPingPongLamp(item)),
             sourceWidth: LOCAL_OFFICE_CANVAS_WIDTH,
             sourceHeight: LOCAL_OFFICE_CANVAS_HEIGHT,
           })
         : EMPTY_FURNITURE_ITEMS,
-    [furniture, remoteOfficeEnabled],
+    [furniture, renderRemoteOfficeDistrict],
   );
   const remoteLayoutFurniture = useMemo(
     () =>
-      !remoteOfficeEnabled
+      !renderRemoteOfficeDistrict
         ? EMPTY_FURNITURE_ITEMS
         : remoteLayoutSnapshot
           ? projectFurnitureIntoRemoteOfficeZone({
@@ -2804,7 +2812,7 @@ export function RetroOffice3D({
               sourceHeight: remoteLayoutSnapshot.height,
             })
           : defaultRemoteLayoutFurniture,
-    [defaultRemoteLayoutFurniture, remoteLayoutSnapshot, remoteOfficeEnabled],
+    [defaultRemoteLayoutFurniture, remoteLayoutSnapshot, renderRemoteOfficeDistrict],
   );
   const [editMode, setEditMode] = useState(false);
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
@@ -2880,7 +2888,7 @@ export function RetroOffice3D({
     [],
   );
   const CAM_POS = useMemo<[number, number, number]>(() => {
-    if (remoteOfficeEnabled) return DISTRICT_CAMERA_POSITION;
+    if (renderRemoteOfficeDistrict) return DISTRICT_CAMERA_POSITION;
     return [
       LOCAL_CAMERA_TARGET[0] +
         (DISTRICT_CAMERA_POSITION[0] - DISTRICT_CAMERA_TARGET[0]),
@@ -2889,11 +2897,11 @@ export function RetroOffice3D({
       LOCAL_CAMERA_TARGET[2] +
         (DISTRICT_CAMERA_POSITION[2] - DISTRICT_CAMERA_TARGET[2]),
     ];
-  }, [LOCAL_CAMERA_TARGET, remoteOfficeEnabled]);
-  const cameraTarget = remoteOfficeEnabled
+  }, [LOCAL_CAMERA_TARGET, renderRemoteOfficeDistrict]);
+  const cameraTarget = renderRemoteOfficeDistrict
     ? DISTRICT_CAMERA_TARGET
     : LOCAL_CAMERA_TARGET;
-  const cameraZoom = remoteOfficeEnabled ? DISTRICT_CAMERA_ZOOM : 56;
+  const cameraZoom = renderRemoteOfficeDistrict ? DISTRICT_CAMERA_ZOOM : 56;
   const overviewPreset = useMemo(
     () => ({ pos: CAM_POS, target: cameraTarget, zoom: cameraZoom }),
     [CAM_POS, cameraTarget, cameraZoom]
@@ -2903,11 +2911,11 @@ export function RetroOffice3D({
   const canvasResetKey = useMemo(
     () =>
       [
-        remoteOfficeEnabled ? "remote" : "local",
+        renderRemoteOfficeDistrict ? "remote" : "local",
         String(officeCenterSignal),
         String(webglRecoveryEpoch),
       ].join(":"),
-    [officeCenterSignal, remoteOfficeEnabled, webglRecoveryEpoch],
+    [officeCenterSignal, renderRemoteOfficeDistrict, webglRecoveryEpoch],
   );
   const [webglContextLost, setWebglContextLost] = useState(false);
   const [webglSafeMode, setWebglSafeMode] = useState(false);
@@ -3750,14 +3758,20 @@ export function RetroOffice3D({
   }, [getBoothAudioContext]);
 
   const playBoothVoice = useCallback(
-    async (text: string): Promise<void> => {
+    async (
+      text: string,
+      options?: { agentId?: string | null; language?: OfficeSpeechLanguage },
+    ): Promise<void> => {
       try {
+        const language = options?.language ?? detectOfficeSpeechLanguage(text);
+        const agentVoice = resolveAgentVoice(options?.agentId, language);
         const response = await fetch("/api/office/voice/reply", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             text,
-            voiceId: voiceRepliesVoiceId ?? undefined,
+            provider: agentVoice.provider,
+            voiceId: voiceRepliesVoiceId ?? agentVoice.voiceId,
             speed: voiceRepliesSpeed ?? 1,
           }),
         });
@@ -5543,7 +5557,7 @@ export function RetroOffice3D({
   const remoteOfficeRouteLabel = remoteOfficeLabel.trim() || "Remote Lab";
   const [voiceRuntimeStatus, setVoiceRuntimeStatus] = useState<{
     ok?: boolean;
-    activeTtsProvider?: "vibevoice" | "kokoro" | null;
+    activeTtsProvider?: "vibevoice" | "kokoro" | "edge" | null;
     fallbackActive?: boolean;
     vibevoice?: { reachable?: boolean; ok?: boolean; tts?: boolean | null; stt?: boolean | null };
     kokoro?: { reachable?: boolean; ok?: boolean; loaded?: boolean | null };
@@ -5576,13 +5590,18 @@ export function RetroOffice3D({
         : voiceRepliesProvider
           ? `${voiceRepliesProvider} pending`
           : "voice pending";
-  const voiceRuntimeTitle = `Voice replies: preferred=${voiceRepliesProvider ?? "vibevoice"}; active=${voiceRuntimeProvider ?? "none"}; VibeVoice TTS=${String(voiceRuntimeStatus?.vibevoice?.tts ?? "unknown")}; Kokoro=${String(voiceRuntimeStatus?.kokoro?.ok ?? "unknown")}`;
+  const voiceRuntimeTitle = `Voice replies: preferred=${voiceRepliesProvider ?? "kokoro"}; active=${voiceRuntimeProvider ?? "none"}; language=${DEFAULT_OFFICE_SPEECH_LANGUAGE}; agent voices=${Object.keys(resolveAgentVoice("hermes").profile.voices).join("/")}; VibeVoice TTS=${String(voiceRuntimeStatus?.vibevoice?.tts ?? "unknown")}; VibeVoice STT=${String(voiceRuntimeStatus?.vibevoice?.stt ?? "unknown")}; Kokoro=${String(voiceRuntimeStatus?.kokoro?.ok ?? "unknown")}`;
   const [openPetsStatus, setOpenPetsStatus] = useState<{
     ok?: boolean;
     appVersion?: string;
     appRunning?: boolean;
     defaultPet?: { displayName?: string; id?: string };
     pets?: { pets?: unknown[] };
+  } | null>(null);
+  const [soundClawStatus, setSoundClawStatus] = useState<{
+    ok?: boolean;
+    configured?: boolean;
+    provider?: string;
   } | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -5607,6 +5626,29 @@ export function RetroOffice3D({
     : openPetsStatus
       ? "offline"
       : "checking";
+  useEffect(() => {
+    let cancelled = false;
+    const refreshSoundClawStatus = async () => {
+      try {
+        const response = await fetch("/api/office/jukebox/suno", { cache: "no-store" });
+        const payload = (await response.json()) as typeof soundClawStatus;
+        if (!cancelled) setSoundClawStatus(payload);
+      } catch {
+        if (!cancelled) setSoundClawStatus({ ok: false, configured: false, provider: "suno" });
+      }
+    };
+    void refreshSoundClawStatus();
+    const timer = window.setInterval(refreshSoundClawStatus, 45_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+  const soundClawLabel = soundclawEnabled
+    ? soundClawStatus?.configured
+      ? "skill live · suno ready"
+      : "skill live · suno off"
+    : "skill missing";
   const [novaEventStatus, setNovaEventStatus] = useState<{
     ok?: boolean;
     latest?: {
@@ -5650,6 +5692,22 @@ export function RetroOffice3D({
     ? `Last Nova event: ${novaEventLatest.time ?? "unknown"}; agent=${novaEventLatest.agent ?? "default"}; pet=${String(novaEventLatest.pet)}; eventbus=${String(novaEventLatest.eventbus)}`
     : "Nova event heartbeat not seen yet";
   const lastNovaAgentPulseRef = useRef("");
+  const lastNovaEventSpokenRef = useRef("");
+  useEffect(() => {
+    if (!novaEventLatest?.message || !voiceRepliesEnabled) return;
+    const key = `${novaEventLatest.time ?? ""}:${novaEventLatest.agent ?? "default"}:${novaEventLatest.mode ?? ""}:${novaEventLatest.message}`;
+    if (lastNovaEventSpokenRef.current === key) return;
+    const mode = (novaEventLatest.mode ?? "event").toLowerCase();
+    if (!["testing", "success", "error", "working", "celebrating"].includes(mode)) return;
+    lastNovaEventSpokenRef.current = key;
+    const agentName = novaEventLatest.agent ? `${novaEventLatest.agent} agent` : "Nova agent";
+    const spoken = `${agentName}: ${mode}. ${novaEventLatest.message}`.slice(0, 220);
+    const language = detectOfficeSpeechLanguage(novaEventLatest.message);
+    void playBoothVoice(spoken, {
+      agentId: novaEventLatest.agent ?? null,
+      language,
+    });
+  }, [novaEventLatest, playBoothVoice, voiceRepliesEnabled]);
   useEffect(() => {
     if (!novaEventLatest?.agent) return;
     const key = `${novaEventLatest.time ?? ""}:${novaEventLatest.agent}:${novaEventLatest.mode ?? ""}:${novaEventLatest.message ?? ""}`;
@@ -5865,7 +5923,7 @@ export function RetroOffice3D({
 
             {/* Floor + walls — always visible, no async loading. */}
             <SceneFloorAndWalls
-              showRemoteOffice={remoteOfficeEnabled}
+              showRemoteOffice={renderRemoteOfficeDistrict}
               wowFxMode={wowFxMode}
             />
 
@@ -7930,6 +7988,9 @@ export function RetroOffice3D({
                   onVoiceRepliesPreview?.(voiceId, voiceName)
                 }
                 voiceRepliesProvider={voiceRepliesProvider}
+                onVoiceRepliesProviderChange={(provider) => {
+                  onVoiceRepliesProviderChange?.(provider);
+                }}
               />
             </div>
           </div>
@@ -8024,7 +8085,7 @@ export function RetroOffice3D({
                 <span className="uppercase tracking-[0.14em]">Diagnostics</span>
               </div>
               <span className="uppercase tracking-[0.12em] text-cyan-200/70">
-                {remoteOfficeEnabled ? "dual-office" : "single-office"}
+                {remoteOfficeEnabled ? "shared-room" : "single-office"}
               </span>
             </div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-white/78">
@@ -8042,6 +8103,8 @@ export function RetroOffice3D({
               <span className="text-right" title={voiceRuntimeTitle}>{voiceRuntimeLabel}</span>
               <span className="text-cyan-200/70">OpenPets</span>
               <span className="text-right">{openPetsLabel}</span>
+              <span className="text-cyan-200/70">SoundClaw</span>
+              <span className="text-right">{soundClawLabel}</span>
               <span className="text-cyan-200/70">Event Agent</span>
               <span className="truncate text-right">{novaEventAgentLabel}</span>
               <span className="text-cyan-200/70">Nova Event</span>
