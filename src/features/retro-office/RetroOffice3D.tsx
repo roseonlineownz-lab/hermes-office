@@ -5577,6 +5577,43 @@ export function RetroOffice3D({
           ? `${voiceRepliesProvider} pending`
           : "voice pending";
   const voiceRuntimeTitle = `Voice replies: preferred=${voiceRepliesProvider ?? "vibevoice"}; active=${voiceRuntimeProvider ?? "none"}; VibeVoice TTS=${String(voiceRuntimeStatus?.vibevoice?.tts ?? "unknown")}; Kokoro=${String(voiceRuntimeStatus?.kokoro?.ok ?? "unknown")}`;
+  const [novaEventStatus, setNovaEventStatus] = useState<{
+    ok?: boolean;
+    latest?: {
+      mode?: string;
+      message?: string;
+      time?: string | null;
+      pet?: boolean;
+      eventbus?: boolean;
+    } | null;
+  } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const refreshNovaEventStatus = async () => {
+      try {
+        const response = await fetch("/api/office/nova-events", { cache: "no-store" });
+        const payload = (await response.json()) as typeof novaEventStatus;
+        if (!cancelled) setNovaEventStatus(payload);
+      } catch {
+        if (!cancelled) setNovaEventStatus({ ok: false, latest: null });
+      }
+    };
+    void refreshNovaEventStatus();
+    const timer = window.setInterval(refreshNovaEventStatus, 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+  const novaEventLatest = novaEventStatus?.latest ?? null;
+  const novaEventLabel = novaEventLatest
+    ? `${novaEventLatest.mode ?? "event"}: ${novaEventLatest.message ?? "Nova event"}`
+    : novaEventStatus?.ok === false
+      ? "no heartbeat log"
+      : "heartbeat pending";
+  const novaEventTitle = novaEventLatest
+    ? `Last Nova event: ${novaEventLatest.time ?? "unknown"}; pet=${String(novaEventLatest.pet)}; eventbus=${String(novaEventLatest.eventbus)}`
+    : "Nova event heartbeat not seen yet";
   const remoteVisualAgentCount = agents.filter((agent) => isRemoteOfficeAgentId(agent.id)).length;
   const localVisualAgentCount = Math.max(agents.length - remoteVisualAgentCount, 0);
   const remoteVisualErrorCount = agents.filter(
@@ -7656,6 +7693,20 @@ export function RetroOffice3D({
               {voiceRepliesEnabled && voiceRuntimeProvider ? "● LIVE" : voiceRepliesEnabled ? "△ CHECK" : "○ OFF"}
             </span>
           </div>
+          <div
+            className={`hud-chip flex h-7 max-w-[260px] items-center gap-1 rounded-md border px-2 text-[10px] font-mono uppercase tracking-[0.12em] ${
+              novaEventLatest
+                ? "border-fuchsia-300/45 bg-fuchsia-500/14 text-fuchsia-50"
+                : "border-slate-500/40 bg-slate-500/12 text-slate-200/80"
+            }`}
+            title={novaEventTitle}
+          >
+            <Gauge size={11} />
+            <span className="truncate">{novaEventLatest ? "nova event" : "no event"}</span>
+            <span className="text-[9px] opacity-70">
+              {novaEventLatest?.pet ? "● PET" : "○ PET"}
+            </span>
+          </div>
           {/* New Idea 7: Heatmap toggle. */}
           <button
             onClick={() => setHeatmapMode((p) => !p)}
@@ -7923,6 +7974,8 @@ export function RetroOffice3D({
               </span>
               <span className="text-cyan-200/70">Voice</span>
               <span className="text-right">{voiceRuntimeLabel}</span>
+              <span className="text-cyan-200/70">Nova Event</span>
+              <span className="truncate text-right" title={novaEventTitle}>{novaEventLabel}</span>
               <span className="text-cyan-200/70">Linked Route</span>
               <span className="text-right">
                 {remoteOfficeConfigured ? remoteOfficeRouteLabel : "not set"}
