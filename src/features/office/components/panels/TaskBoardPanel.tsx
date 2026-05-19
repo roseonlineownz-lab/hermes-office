@@ -177,8 +177,9 @@ export function TaskBoardPanel({
               </span>
             ))}
             {duplicateReport ? (
-              <span className="rounded border border-violet-400/20 bg-violet-500/10 px-2 py-1 text-violet-100/75">
+              <span className={`rounded border px-2 py-1 ${duplicateReport.total_duplicate_tasks > 0 ? "border-rose-400/35 bg-rose-500/15 text-rose-100" : "border-violet-400/20 bg-violet-500/10 text-violet-100/75"}`} title={duplicateReport.total_duplicate_tasks > 0 ? "Duplicate child tasks are clogging the orchestrator queue; cleanup should run dry-run first." : "No duplicate orchestrator tasks detected."}>
                 dupes {duplicateReport.total_duplicate_tasks}/{duplicateReport.total_groups}
+                {duplicateReport.total_duplicate_tasks > 0 ? " · needs cleanup" : ""}
               </span>
             ) : null}
             {browserTools ? (
@@ -186,6 +187,11 @@ export function TaskBoardPanel({
                 browser {browserTools.browser?.ok ? "cdp" : "offline"} · cu {browserTools.tools?.computerUse ? "yes" : "no"} · crawl {browserTools.tools?.crawl4ai ? "yes" : "no"}
               </span>
             ) : null}
+          </div>
+        ) : null}
+        {duplicateReport?.total_duplicate_tasks ? (
+          <div className="mt-2 rounded border border-rose-400/20 bg-rose-500/10 px-2 py-1.5 text-[10px] leading-4 text-rose-100/80">
+            Orchestrator queue has {duplicateReport.total_duplicate_tasks} duplicate tasks across {duplicateReport.total_groups} groups. Next safe action: dry-run duplicate archive, then archive duplicate children only.
           </div>
         ) : null}
         {activeOrchestratorTasks.length > 0 ? (

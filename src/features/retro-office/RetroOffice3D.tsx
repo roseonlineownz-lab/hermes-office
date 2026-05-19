@@ -5541,6 +5541,50 @@ export function RetroOffice3D({
       ? remoteOfficePresenceUrl.trim().length > 0
       : remoteOfficeGatewayUrl.trim().length > 0;
   const remoteOfficeRouteLabel = remoteOfficeLabel.trim() || "Remote Lab";
+  const [voiceRuntimeStatus, setVoiceRuntimeStatus] = useState<{
+    ok?: boolean;
+    activeTtsProvider?: "vibevoice" | "kokoro" | null;
+    fallbackActive?: boolean;
+    vibevoice?: { reachable?: boolean; ok?: boolean; tts?: boolean | null; stt?: boolean | null };
+    kokoro?: { reachable?: boolean; ok?: boolean; loaded?: boolean | null };
+  } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const refreshVoiceRuntimeStatus = async () => {
+      try {
+        const response = await fetch("/api/office/voice/status", { cache: "no-store" });
+        const payload = (await response.json()) as typeof voiceRuntimeStatus;
+        if (!cancelled) setVoiceRuntimeStatus(payload);
+      } catch {
+        if (!cancelled) setVoiceRuntimeStatus({ ok: false, activeTtsProvider: null });
+      }
+    };
+    void refreshVoiceRuntimeStatus();
+    const timer = window.setInterval(refreshVoiceRuntimeStatus, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+  const voiceRuntimeProvider = voiceRuntimeStatus?.activeTtsProvider ?? null;
+  const voiceRuntimeLabel = !voiceRepliesEnabled
+    ? "voice off"
+    : voiceRuntimeProvider === "kokoro"
+      ? "kokoro fallback"
+      : voiceRuntimeProvider === "vibevoice"
+        ? "vibevoice tts"
+        : voiceRepliesProvider
+          ? `${voiceRepliesProvider} pending`
+          : "voice pending";
+  const voiceRuntimeTitle = `Voice replies: preferred=${voiceRepliesProvider ?? "vibevoice"}; active=${voiceRuntimeProvider ?? "none"}; VibeVoice TTS=${String(voiceRuntimeStatus?.vibevoice?.tts ?? "unknown")}; Kokoro=${String(voiceRuntimeStatus?.kokoro?.ok ?? "unknown")}`;
+  const remoteVisualAgentCount = agents.filter((agent) => isRemoteOfficeAgentId(agent.id)).length;
+  const localVisualAgentCount = Math.max(agents.length - remoteVisualAgentCount, 0);
+  const remoteVisualErrorCount = agents.filter(
+    (agent) => isRemoteOfficeAgentId(agent.id) && agent.status === "error",
+  ).length;
+  const localVisualErrorCount = agents.filter(
+    (agent) => !isRemoteOfficeAgentId(agent.id) && agent.status === "error",
+  ).length;
   const floorNavButtons = [
     {
       key: "ops",
@@ -6552,7 +6596,12 @@ export function RetroOffice3D({
             >
               <Users className="h-3.5 w-3.5" />
               <span>{agents.length}</span>
-              <span className="hidden sm:inline">agents</span>
+              <span className="hidden sm:inline">visual</span>
+              {remoteOfficeEnabled ? (
+                <span className="hidden text-[9px] text-amber-200/55 sm:inline">
+                  · {remoteVisualAgentCount} remote / {localVisualAgentCount} local
+                </span>
+              ) : null}
             </button>
           </div>
 
@@ -7599,12 +7648,12 @@ export function RetroOffice3D({
                 ? "border-cyan-300/45 bg-cyan-500/16 text-cyan-50"
                 : "border-slate-500/40 bg-slate-500/12 text-slate-200/80"
             }`}
-            title={`Voice Path: ${voiceRepliesProvider ?? "vibevoice"} | fallback: vibevoice | enabled: ${voiceRepliesEnabled}`}
+            title={voiceRuntimeTitle}
           >
             <AudioWaveform size={11} />
-            {voiceRepliesProvider ?? "vibevoice"}
+            <span>{voiceRuntimeLabel}</span>
             <span className="text-[9px] opacity-70">
-              {voiceRepliesEnabled ? "● LIVE" : "○ OFF"}
+              {voiceRepliesEnabled && voiceRuntimeProvider ? "● LIVE" : voiceRepliesEnabled ? "△ CHECK" : "○ OFF"}
             </span>
           </div>
           {/* New Idea 7: Heatmap toggle. */}
@@ -7798,7 +7847,11 @@ export function RetroOffice3D({
               </span>
               <span className="opacity-30">·</span>
               <span className="text-amber-500/60">
-                {agents.filter((a) => a.status === "error").length} error
+                {localVisualErrorCount + remoteVisualErrorCount === 0
+                  ? "0 error"
+                  : remoteVisualErrorCount > 0 && localVisualErrorCount === 0
+                    ? `${remoteVisualErrorCount} remote err`
+                    : `${localVisualErrorCount} local err · ${remoteVisualErrorCount} remote err`}
               </span>
               {/* New Idea 6: Vibe score with animated EQ bars. */}
               {(() => {
@@ -7863,11 +7916,13 @@ export function RetroOffice3D({
               <span className="text-cyan-200/70">Gateway</span>
               <span className="text-right">{gatewayStatus}</span>
               <span className="text-cyan-200/70">Agents</span>
-              <span className="text-right">{agents.length}</span>
-              <span className="text-cyan-200/70">Voice</span>
               <span className="text-right">
-                {voiceRepliesEnabled ? voiceRepliesProvider ?? "vibevoice" : "off"}
+                {remoteOfficeEnabled
+                  ? `${agents.length} visual · ${remoteVisualAgentCount} remote · ${localVisualAgentCount} local`
+                  : `${agents.length} visual`}
               </span>
+              <span className="text-cyan-200/70">Voice</span>
+              <span className="text-right">{voiceRuntimeLabel}</span>
               <span className="text-cyan-200/70">Linked Route</span>
               <span className="text-right">
                 {remoteOfficeConfigured ? remoteOfficeRouteLabel : "not set"}

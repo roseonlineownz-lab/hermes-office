@@ -4953,13 +4953,14 @@ export function OfficeScreen({
       ) : null}
 
       {showOpenClawConsole ? (
-        <section className="pointer-events-auto fixed bottom-3 left-3 z-30 flex w-[520px] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded border border-cyan-500/25 bg-black/78 shadow-2xl backdrop-blur">
+        <section className={`pointer-events-auto fixed bottom-3 left-3 z-30 flex max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded border border-cyan-500/25 bg-black/78 shadow-2xl backdrop-blur ${openClawConsoleCollapsed && openClawLogEntries.length === 0 ? "w-[300px]" : "w-[520px]"}`}>
           <div className="flex items-center justify-between border-b border-cyan-500/15 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em] text-cyan-200/80">
             <span>OpenClaw Event Console</span>
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-cyan-100/45">
-                agents {state.agents.length} | events{" "}
-                {filteredOpenClawLogEntries.length}/{openClawLogEntries.length}
+                {openClawLogEntries.length === 0
+                  ? `idle · agents ${state.agents.length}`
+                  : `agents ${state.agents.length} | events ${filteredOpenClawLogEntries.length}/${openClawLogEntries.length}`}
               </span>
               <button
                 type="button"
