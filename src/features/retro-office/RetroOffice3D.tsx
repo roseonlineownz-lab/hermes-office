@@ -5649,6 +5649,40 @@ export function RetroOffice3D({
       ? "skill live · suno ready"
       : "skill live · suno off"
     : "skill missing";
+  const [officeActionStatus, setOfficeActionStatus] = useState<{
+    ok?: boolean;
+    active?: Array<{ id?: string; agent?: string; title?: string; status?: string; progress?: number | null; lastLog?: string | null }>;
+    recent?: Array<{ id?: string; agent?: string; title?: string; status?: string; progress?: number | null; lastLog?: string | null }>;
+    latest?: { id?: string; agent?: string; title?: string; status?: string; progress?: number | null; lastLog?: string | null } | null;
+  } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const refreshOfficeActions = async () => {
+      try {
+        const response = await fetch("/api/office/actions", { cache: "no-store" });
+        const payload = (await response.json()) as typeof officeActionStatus;
+        if (!cancelled) setOfficeActionStatus(payload);
+      } catch {
+        if (!cancelled) setOfficeActionStatus({ ok: false, active: [], recent: [], latest: null });
+      }
+    };
+    void refreshOfficeActions();
+    const timer = window.setInterval(refreshOfficeActions, 8_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+  const visibleOfficeActions = (officeActionStatus?.active?.length ?? 0) > 0
+    ? (officeActionStatus?.active ?? [])
+    : (officeActionStatus?.recent ?? []).slice(0, 3);
+  const officeActionSummary = (officeActionStatus?.active?.length ?? 0) > 0
+    ? `${officeActionStatus?.active?.length ?? 0} running`
+    : officeActionStatus?.latest
+      ? `${officeActionStatus.latest.status ?? "done"}: ${officeActionStatus.latest.title ?? "Nova action"}`
+      : officeActionStatus?.ok === false
+        ? "action log offline"
+        : "waiting for nova-run";
   const [novaEventStatus, setNovaEventStatus] = useState<{
     ok?: boolean;
     latest?: {
@@ -8078,6 +8112,31 @@ export function RetroOffice3D({
               )}
             </div>
           </div>
+          {visibleOfficeActions.length > 0 ? (
+            <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 w-[calc(100%-2rem)] max-w-[430px] -translate-x-1/2 rounded-xl border border-emerald-400/28 bg-black/58 p-3 text-[10px] font-mono text-emerald-50 shadow-xl backdrop-blur-md">
+              <div className="mb-2 flex items-center justify-between text-emerald-100/90">
+                <span className="uppercase tracking-[0.14em]">Live Actions</span>
+                <span className="uppercase tracking-[0.12em] text-emerald-200/65">nova-run</span>
+              </div>
+              <div className="space-y-1.5">
+                {visibleOfficeActions.map((action) => {
+                  const status = action.status ?? "unknown";
+                  const progress = typeof action.progress === "number" ? `${action.progress}%` : "--";
+                  return (
+                    <div key={`${action.id ?? action.title}-${status}`} className="rounded-lg border border-emerald-400/15 bg-emerald-500/8 px-2 py-1.5">
+                      <div className="flex items-center justify-between gap-2 text-emerald-100/90">
+                        <span className="truncate font-semibold uppercase tracking-[0.08em]">{action.agent ?? "agent"} · {action.title ?? "Nova action"}</span>
+                        <span className="shrink-0 text-emerald-200/70">{status} · {progress}</span>
+                      </div>
+                      {action.lastLog ? (
+                        <div className="mt-0.5 truncate text-emerald-100/55">{action.lastLog}</div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
           <div className="hud-glow hud-panel pointer-events-none absolute bottom-3 right-3 z-10 w-[calc(100%-1.5rem)] max-w-[310px] rounded-xl border border-cyan-500/28 p-3 text-[10px] font-mono shadow-xl backdrop-blur-md">
             <div className="mb-2 flex items-center justify-between text-cyan-100/85">
               <div className="flex items-center gap-1.5">
@@ -8105,6 +8164,8 @@ export function RetroOffice3D({
               <span className="text-right">{openPetsLabel}</span>
               <span className="text-cyan-200/70">SoundClaw</span>
               <span className="text-right">{soundClawLabel}</span>
+              <span className="text-cyan-200/70">Actions</span>
+              <span className="truncate text-right" title={officeActionSummary}>{officeActionSummary}</span>
               <span className="text-cyan-200/70">Event Agent</span>
               <span className="truncate text-right">{novaEventAgentLabel}</span>
               <span className="text-cyan-200/70">Nova Event</span>
