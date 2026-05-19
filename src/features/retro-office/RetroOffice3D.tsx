@@ -2522,7 +2522,7 @@ export function RetroOffice3D({
   githubSkill = null,
   taskManagerEnabled = false,
   soundclawEnabled = false,
-  officeTitle = "Luke Headquarters",
+  officeTitle = "NovaMaster HQ",
   officeTitleLoaded = false,
   remoteOfficeEnabled = false,
   remoteOfficeSourceKind = "presence_endpoint",
@@ -5577,6 +5577,36 @@ export function RetroOffice3D({
           ? `${voiceRepliesProvider} pending`
           : "voice pending";
   const voiceRuntimeTitle = `Voice replies: preferred=${voiceRepliesProvider ?? "vibevoice"}; active=${voiceRuntimeProvider ?? "none"}; VibeVoice TTS=${String(voiceRuntimeStatus?.vibevoice?.tts ?? "unknown")}; Kokoro=${String(voiceRuntimeStatus?.kokoro?.ok ?? "unknown")}`;
+  const [openPetsStatus, setOpenPetsStatus] = useState<{
+    ok?: boolean;
+    appVersion?: string;
+    appRunning?: boolean;
+    defaultPet?: { displayName?: string; id?: string };
+    pets?: { pets?: unknown[] };
+  } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const refreshOpenPetsStatus = async () => {
+      try {
+        const response = await fetch("/api/office/openpets/status", { cache: "no-store" });
+        const payload = (await response.json()) as typeof openPetsStatus;
+        if (!cancelled) setOpenPetsStatus(payload);
+      } catch {
+        if (!cancelled) setOpenPetsStatus({ ok: false, appRunning: false });
+      }
+    };
+    void refreshOpenPetsStatus();
+    const timer = window.setInterval(refreshOpenPetsStatus, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+  const openPetsLabel = openPetsStatus?.ok
+    ? `${openPetsStatus.defaultPet?.displayName ?? "pet"} · ${(openPetsStatus.pets?.pets ?? []).length} pets`
+    : openPetsStatus
+      ? "offline"
+      : "checking";
   const [novaEventStatus, setNovaEventStatus] = useState<{
     ok?: boolean;
     latest?: {
@@ -5585,6 +5615,8 @@ export function RetroOffice3D({
       time?: string | null;
       pet?: boolean;
       eventbus?: boolean;
+      agent?: string;
+      requestedPet?: string;
     } | null;
   } | null>(null);
   useEffect(() => {
@@ -5606,14 +5638,48 @@ export function RetroOffice3D({
     };
   }, []);
   const novaEventLatest = novaEventStatus?.latest ?? null;
+  const novaEventAgentLabel = novaEventLatest?.agent
+    ? `${novaEventLatest.agent}${novaEventLatest.requestedPet ? ` · ${novaEventLatest.requestedPet}` : ""}`
+    : "default";
   const novaEventLabel = novaEventLatest
     ? `${novaEventLatest.mode ?? "event"}: ${novaEventLatest.message ?? "Nova event"}`
     : novaEventStatus?.ok === false
       ? "no heartbeat log"
       : "heartbeat pending";
   const novaEventTitle = novaEventLatest
-    ? `Last Nova event: ${novaEventLatest.time ?? "unknown"}; pet=${String(novaEventLatest.pet)}; eventbus=${String(novaEventLatest.eventbus)}`
+    ? `Last Nova event: ${novaEventLatest.time ?? "unknown"}; agent=${novaEventLatest.agent ?? "default"}; pet=${String(novaEventLatest.pet)}; eventbus=${String(novaEventLatest.eventbus)}`
     : "Nova event heartbeat not seen yet";
+  const lastNovaAgentPulseRef = useRef("");
+  useEffect(() => {
+    if (!novaEventLatest?.agent) return;
+    const key = `${novaEventLatest.time ?? ""}:${novaEventLatest.agent}:${novaEventLatest.mode ?? ""}:${novaEventLatest.message ?? ""}`;
+    if (lastNovaAgentPulseRef.current === key) return;
+    const wanted = novaEventLatest.agent.toLowerCase();
+    const aliases =
+      wanted === "qa"
+        ? ["qa", "coder", "code", "review"]
+        : wanted === "media"
+          ? ["media", "publisher", "viral"]
+          : wanted === "leadgen"
+            ? ["leadgen", "lead", "outreach"]
+            : wanted === "jarvis" || wanted === "core"
+              ? [wanted, "jarvis", "core"]
+              : [wanted];
+    const matched = agents.find((agent) => {
+      const haystack = `${agent.id} ${agent.name} ${"subtitle" in agent ? (agent.subtitle ?? "") : ""}`.toLowerCase();
+      return aliases.some((alias) => haystack.includes(alias));
+    });
+    if (!matched) return;
+    lastNovaAgentPulseRef.current = key;
+    setSpotlightAgentId(matched.id);
+    setMoodByAgentId((prev) => ({
+      ...prev,
+      [matched.id]: {
+        emoji: novaEventLatest.mode === "error" ? "⚠️" : novaEventLatest.mode === "success" ? "✅" : novaEventLatest.mode === "testing" ? "🧪" : "⚡",
+        ts: Date.now(),
+      },
+    }));
+  }, [agents, novaEventLatest]);
   const remoteVisualAgentCount = agents.filter((agent) => isRemoteOfficeAgentId(agent.id)).length;
   const localVisualAgentCount = Math.max(agents.length - remoteVisualAgentCount, 0);
   const remoteVisualErrorCount = agents.filter(
@@ -7951,7 +8017,7 @@ export function RetroOffice3D({
               )}
             </div>
           </div>
-          <div className="hud-glow hud-panel pointer-events-none absolute bottom-3 right-3 z-10 w-[calc(100%-1.5rem)] max-w-[260px] rounded-xl border border-cyan-500/28 p-3 text-[10px] font-mono shadow-xl backdrop-blur-md">
+          <div className="hud-glow hud-panel pointer-events-none absolute bottom-3 right-3 z-10 w-[calc(100%-1.5rem)] max-w-[310px] rounded-xl border border-cyan-500/28 p-3 text-[10px] font-mono shadow-xl backdrop-blur-md">
             <div className="mb-2 flex items-center justify-between text-cyan-100/85">
               <div className="flex items-center gap-1.5">
                 <Gauge size={11} />
@@ -7973,7 +8039,11 @@ export function RetroOffice3D({
                   : `${agents.length} visual`}
               </span>
               <span className="text-cyan-200/70">Voice</span>
-              <span className="text-right">{voiceRuntimeLabel}</span>
+              <span className="text-right" title={voiceRuntimeTitle}>{voiceRuntimeLabel}</span>
+              <span className="text-cyan-200/70">OpenPets</span>
+              <span className="text-right">{openPetsLabel}</span>
+              <span className="text-cyan-200/70">Event Agent</span>
+              <span className="truncate text-right">{novaEventAgentLabel}</span>
               <span className="text-cyan-200/70">Nova Event</span>
               <span className="truncate text-right" title={novaEventTitle}>{novaEventLabel}</span>
               <span className="text-cyan-200/70">Linked Route</span>

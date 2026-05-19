@@ -8,7 +8,7 @@ const RECEIPT_DIR =
   process.env.NOVAMASTER_RECEIPT_DIR ??
   "/home/faramix/.cache/clawmem/novamaster-receipts";
 
-const parseEventLine = (line: string) => {
+export const parseEventLine = (line: string) => {
   try {
     const payload = JSON.parse(line) as Record<string, unknown>;
     const mode =
@@ -24,12 +24,20 @@ const parseEventLine = (line: string) => {
         : typeof payload.ts === "string"
           ? payload.ts
           : null;
+    const agent = typeof payload.agent === "string" && payload.agent.trim()
+      ? payload.agent.trim().toLowerCase()
+      : null;
+    const requestedPet = typeof payload.requestedPet === "string" && payload.requestedPet.trim()
+      ? payload.requestedPet.trim()
+      : null;
     return {
       mode,
       message,
       time,
       pet: payload.pet === true,
       eventbus: payload.eventbus === true,
+      ...(agent ? { agent } : {}),
+      ...(requestedPet ? { requestedPet } : {}),
     };
   } catch {
     return null;
