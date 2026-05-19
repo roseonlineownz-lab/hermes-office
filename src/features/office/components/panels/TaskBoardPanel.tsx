@@ -40,6 +40,17 @@ type DuplicateReport = {
   ok: boolean;
   total_groups: number;
   total_duplicate_tasks: number;
+  duplicates?: Array<{
+    key: string;
+    count: number;
+    title: string;
+    ids: string[];
+    statuses?: string[];
+    assigned_agents?: string[];
+    updated_at?: string[];
+    root_count?: number;
+    child_count?: number;
+  }>;
 };
 
 type BrowserToolsStatus = {
@@ -112,6 +123,7 @@ export function TaskBoardPanel({
   const [browserTools, setBrowserTools] = useState<BrowserToolsStatus | null>(null);
   const [orchestratorError, setOrchestratorError] = useState<string | null>(null);
   const [orchestratorLoading, setOrchestratorLoading] = useState(false);
+  const [showDuplicateDryRun, setShowDuplicateDryRun] = useState(false);
 
   const refreshOrchestrator = useCallback(async () => {
     setOrchestratorLoading(true);
@@ -143,6 +155,11 @@ export function TaskBoardPanel({
   const activeOrchestratorTasks = useMemo(
     () => (orchestrator?.tasks ?? []).filter((task) => task.status !== "done").slice(0, 5),
     [orchestrator],
+  );
+
+  const duplicateDryRunGroups = useMemo(
+    () => (duplicateReport?.duplicates ?? []).filter((group) => group.count > 1).slice(0, 4),
+    [duplicateReport],
   );
 
   return (
@@ -191,7 +208,38 @@ export function TaskBoardPanel({
         ) : null}
         {duplicateReport?.total_duplicate_tasks ? (
           <div className="mt-2 rounded border border-rose-400/20 bg-rose-500/10 px-2 py-1.5 text-[10px] leading-4 text-rose-100/80">
-            Orchestrator queue has {duplicateReport.total_duplicate_tasks} duplicate tasks across {duplicateReport.total_groups} groups. Next safe action: dry-run duplicate archive, then archive duplicate children only.
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>
+                Orchestrator queue has {duplicateReport.total_duplicate_tasks} duplicate tasks across {duplicateReport.total_groups} groups.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowDuplicateDryRun((value) => !value)}
+                className="rounded border border-rose-300/30 bg-rose-200/10 px-2 py-0.5 uppercase tracking-[0.14em] text-rose-50 hover:border-rose-200/60"
+              >
+                {showDuplicateDryRun ? "Hide dry-run" : "Dry-run plan"}
+              </button>
+            </div>
+            {showDuplicateDryRun ? (
+              <div className="mt-2 grid gap-1 border-t border-rose-300/10 pt-2 text-rose-50/75">
+                <div className="uppercase tracking-[0.12em] text-rose-100">Read-only cleanup plan · no archive executed</div>
+                {duplicateDryRunGroups.map((group) => {
+                  const keepId = group.ids.at(-1) ?? group.ids[0] ?? "unknown";
+                  const archiveCount = Math.max(group.ids.length - 1, 0);
+                  return (
+                    <div key={group.key} className="rounded bg-black/20 px-2 py-1">
+                      <div className="truncate text-rose-50">{group.title}</div>
+                      <div className="text-rose-100/60">
+                        keep latest {keepId} · archive {archiveCount} duplicate child{archiveCount === 1 ? "" : "ren"} · agent {group.assigned_agents?.[0] ?? "mixed"}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="text-rose-100/55">
+                  Backend archive endpoint is not called from this UI. Add/verify a scoped archive action before mutating persisted tasks.
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
         {activeOrchestratorTasks.length > 0 ? (

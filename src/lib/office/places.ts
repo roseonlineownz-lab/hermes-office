@@ -110,6 +110,11 @@ export const DEFAULT_SKILL_TRIGGER_FALLBACKS_BY_SKILL_KEY: Record<
   soundclaw: {
     anyPhrases: [
       "spotify",
+      "suno",
+      "generate music",
+      "create a song",
+      "make a beat",
+      "compose a soundtrack",
       "play a song",
       "play this song",
       "play music",

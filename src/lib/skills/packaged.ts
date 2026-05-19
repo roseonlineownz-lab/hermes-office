@@ -332,13 +332,13 @@ const TASK_MANAGER_EXAMPLE_JSON = `{
 // Keep this string synchronized with assets/skills/soundclaw/SKILL.md.
 const SOUNDCLAW_SKILL_MD = `---
 name: soundclaw
-description: Control Spotify playback, search music, and return shareable music links.
+description: Control the Office jukebox: Spotify playback/search plus Suno AI music generation when configured.
 metadata: {"openclaw":{"skillKey":"soundclaw"}}
 ---
 
 # SOUNDCLAW
 
-Use this skill when the user wants an agent to search for music, play a song or playlist, control Spotify playback, or send back a shareable Spotify link on the same channel the request came from.
+Use this skill when the user wants an agent to search for music, play a song or playlist, control Spotify playback, generate a Suno/AI song, make a beat, compose a soundtrack, or send back a shareable music link on the same channel the request came from.
 
 ## Trigger
 
@@ -347,6 +347,11 @@ Use this skill when the user wants an agent to search for music, play a song or 
   "activation": {
     "anyPhrases": [
       "spotify",
+      "suno",
+      "generate music",
+      "create a song",
+      "make a beat",
+      "compose a soundtrack",
       "play a song",
       "play this song",
       "play music",
@@ -365,7 +370,7 @@ Use this skill when the user wants an agent to search for music, play a song or 
 
 When this skill is activated, the agent should walk to the office jukebox before handling the request.
 
-- Treat requests from Telegram or any other external surface as valid triggers when they ask for Spotify playback, search, queueing, or music-link sharing.
+- Treat requests from Telegram or any other external surface as valid triggers when they ask for Spotify playback, search, queueing, Suno generation, or music-link sharing.
 - The physical behavior for this skill is: go to the jukebox, perform the music-selection workflow, then report the result.
 - If the agent is already at the jukebox, continue without adding extra movement narration.
 
@@ -383,10 +388,12 @@ When this skill is activated, the agent should walk to the office jukebox before
 > The Claw3D UI handles authentication via Spotify PKCE OAuth in the browser.
 > The gateway skill handles agent-driven requests via the \`soundclaw.*\` RPC namespace.
 
-### Authentication model
+### Provider model
 
-The user authenticates directly in the browser (PKCE, no secret required).
+Spotify: the user authenticates directly in the browser (PKCE, no secret required).
 The access token is stored in browser \`localStorage\` under the key \`soundclaw_token\`.
+
+Suno: Office exposes a server-side \`/api/office/jukebox/suno\` route when \`SUNO_API_KEY\` is configured. Never expose the key to the browser.
 
 For **agent-driven** playback (e.g. "play Jazz for me"), the gateway skill should either:
 - Use a server-side Spotify app token (Client Credentials) for search-only actions, or
@@ -412,16 +419,20 @@ soundclaw.pause(): void
 soundclaw.resume(): void
 soundclaw.next(): void
 soundclaw.previous(): void
+
+// Generate AI music via Suno-compatible backend. Requires SUNO_API_KEY server-side.
+soundclaw.generate({ prompt: string, tags?: string, makeInstrumental?: boolean }): { ok: boolean; ids?: string[]; audioUrls?: string[] }
 \`\`\`
 
 ### Agent workflow
 
-1. Agent receives a music request ("play some jazz", "find this song", etc.)
+1. Agent receives a music request ("play some jazz", "find this song", "generate a Suno beat", etc.)
 2. Agent walks to the jukebox (\`movement.target: "jukebox"\`)
-3. Agent calls \`soundclaw.search\` to find the best match
-4. If the request came from a chat channel (Telegram, etc.): call \`soundclaw.getLink\` and reply with the link
-5. If the request came from the office UI: call \`soundclaw.play\` to start playback
-6. Agent reports back what was played or linked
+3. If it is a generation request (Suno/generate/create/make/compose): call \`soundclaw.generate\` or Office \`/api/office/jukebox/suno\`, then report queued/generated clips
+4. Otherwise call \`soundclaw.search\` to find the best Spotify match
+5. If the request came from a chat channel (Telegram, etc.): call \`soundclaw.getLink\` and reply with the link
+6. If the request came from the office UI: call \`soundclaw.play\` to start playback
+7. Agent reports back what was played, linked, queued, or generated
 `;
 
 const PACKAGED_SKILL_FILES: Record<string, PackagedSkillFile[]> = {

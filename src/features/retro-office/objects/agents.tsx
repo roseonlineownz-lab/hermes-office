@@ -24,6 +24,18 @@ const formatAgentNameplateText = (value: string): string => {
   return firstName || normalized;
 };
 
+const formatAgentBadgeSubtitle = (value: string): string => {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  return normalized.length > 24 ? `${normalized.slice(0, 21).trim()}…` : normalized;
+};
+
+const formatAgentStatusSpeech = (status: string): string => {
+  if (status === "error") return "ERR · details in panel";
+  if (status === "working") return "LIVE";
+  return "IDLE";
+};
+
 const resolveAgentInitials = (name: string, agentId: string): string => {
   const source = name.trim() || agentId.replace(/^remote:/, "");
   const parts = source.split(/[\s_-]+/).filter(Boolean);
@@ -651,9 +663,7 @@ export const AgentModel = memo(function AgentModel({
   const resolvedSpeechText =
     showSpeech && speechText?.trim()
       ? speechText.trim()
-      : status === "error"
-        ? "error"
-        : "...";
+      : formatAgentStatusSpeech(status);
   const activeSpeechBubble = showSpeech && Boolean(speechText?.trim());
   const normalizedSpeechBubbleText = activeSpeechBubble
     ? resolvedSpeechText.replace(/\s+/g, " ").trim()
@@ -704,7 +714,7 @@ export const AgentModel = memo(function AgentModel({
     : "transparent";
   const speechBubbleBorderInset = activeSpeechBubble ? 0.03 : 0;
   const nameplateText = name ? formatAgentNameplateText(name) : "";
-  const subtitleText = typeof subtitle === "string" ? subtitle.trim() : "";
+  const subtitleText = typeof subtitle === "string" ? formatAgentBadgeSubtitle(subtitle) : "";
   const statusMeta = resolveAgentStatusMeta(status);
   const roleLabel = resolveAgentRoleLabel(agentId, subtitleText);
   const agentInitials = resolveAgentInitials(name, agentId);
