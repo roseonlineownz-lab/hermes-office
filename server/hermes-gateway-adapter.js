@@ -67,6 +67,7 @@ const AGENT_ID = "hermes";
 const MAIN_KEY = "main";
 const MAIN_SESSION_KEY = `agent:${AGENT_ID}:${MAIN_KEY}`;
 const CONFIG_PATH = `${HOME}/.hermes/config.json`;
+const CLAW3D_BACKEND_URL = process.env.CLAW3D_BACKEND_URL || "http://127.0.0.1:8095";
 const MAX_TOOL_ROUNDS = 8;
 
 // ---------------------------------------------------------------------------
@@ -231,6 +232,73 @@ const agentRegistry = new Map([
     settings: { wipe: false, continuity: true, model: HERMES_MODEL },
   }],
 ]);
+
+// ---------------------------------------------------------------------------
+// Sync agents from claw3d-real-backend into the gateway registry
+// ---------------------------------------------------------------------------
+
+function workspaceForAgentId(agentId) {
+  return `${HOME}/.hermes/workspace-${String(agentId || AGENT_ID).replace(/[^a-zA-Z0-9_.-]+/g, "-")}`;
+}
+
+function systemPromptForBackendAgent(agentId, agent) {
+  const name = agent?.name || agentId;
+  const task = agent?.task || "Ready for tasks";
+  const room = agent?.room || "office";
+  return `You are ${name}, a NovaMaster Claw3D office agent. Current room: ${room}. Current task: ${task}.`;
+}
+
+async function syncBackendAgents() {
+  try {
+    const res = await fetch(`${CLAW3D_BACKEND_URL}/agents`);
+    if (!res.ok) return { ok: false, count: agentRegistry.size, error: `backend_http_${res.status}` };
+    const { data } = await res.json();
+    if (!data || typeof data !== "object") return { ok: false, count: agentRegistry.size, error: "backend_agents_missing" };
+
+    let added = 0;
+    let updated = 0;
+    for (const [agentId, agent] of Object.entries(data)) {
+      if (!agentId || !agent || typeof agent !== "object") continue;
+      const nextAgent = {
+        id: agentId,
+        name: agent.name || agentId,
+        workspace: workspaceForAgentId(agentId),
+        role: agent.task || agent.room || "",
+        systemPrompt: systemPromptForBackendAgent(agentId, agent),
+        settings: { wipe: false, continuity: true, model: agent.model || HERMES_MODEL },
+        backend: {
+          status: agent.status || "unknown",
+          room: agent.room || "",
+          task: agent.task || "",
+          progress: typeof agent.progress === "number" ? agent.progress : null,
+          preferredModel: agent.preferred_model || agent.model || HERMES_MODEL,
+          preferredProvider: agent.preferred_provider || "",
+          modelRole: agent.model_role || "",
+        },
+      };
+
+      const existing = agentRegistry.get(agentId);
+      if (existing) {
+        agentRegistry.set(agentId, {
+          ...existing,
+          ...nextAgent,
+          settings: { ...existing.settings, ...nextAgent.settings },
+        });
+        updated++;
+      } else {
+        agentRegistry.set(agentId, nextAgent);
+        added++;
+      }
+    }
+
+    if (added > 0 || updated > 0) {
+      console.log(`[hermes-adapter] Synced backend agents: added=${added} updated=${updated} total=${agentRegistry.size}`);
+    }
+    return { ok: true, added, updated, count: agentRegistry.size };
+  } catch (err) {
+    return { ok: false, count: agentRegistry.size, error: sanitizeErrorMessage(err) };
+  }
+}
 
 // Set of all active sendEvent functions (one per connected WS client)
 /** @type {Set<(frame: object) => void>} */
@@ -832,12 +900,23 @@ async function handleMethod(method, params, id, sendEvent) {
     // --- Agent management ---------------------------------------------------
 
     case "agents.list": {
+      const sync = await syncBackendAgents();
       const allAgents = [...agentRegistry.values()].map((agent) => ({
-        id: agent.id, name: agent.name, workspace: agent.workspace,
+        id: agent.id,
+        name: agent.name,
+        workspace: agent.workspace,
         identity: { name: agent.name, emoji: "🤖" },
         role: agent.role,
+        status: agent.backend?.status,
+        room: agent.backend?.room,
+        task: agent.backend?.task,
+        progress: agent.backend?.progress,
+        model: agent.settings?.model,
+        preferredModel: agent.backend?.preferredModel,
+        preferredProvider: agent.backend?.preferredProvider,
+        modelRole: agent.backend?.modelRole,
       }));
-      return resOk(id, { defaultId: AGENT_ID, mainKey: MAIN_KEY, agents: allAgents });
+      return resOk(id, { defaultId: AGENT_ID, mainKey: MAIN_KEY, agents: allAgents, sync });
     }
 
     case "agents.create": {
@@ -1282,11 +1361,13 @@ function startAdapter() {
     });
   });
 
-  httpServer.listen(ADAPTER_PORT, "127.0.0.1", () => {
+  httpServer.listen(ADAPTER_PORT, "127.0.0.1", async () => {
+    await syncBackendAgents();
     console.log(`\n[hermes-adapter] ✓ Listening on ws://localhost:${ADAPTER_PORT}`);
     console.log(`[hermes-adapter] ✓ Forwarding to Hermes API at ${HERMES_API_URL}`);
     console.log(`[hermes-adapter] ✓ Model: ${HERMES_MODEL}`);
     console.log(`[hermes-adapter] ✓ Multi-agent orchestration: ENABLED`);
+    console.log(`[hermes-adapter] ✓ Agents: ${agentRegistry.size} (${[...agentRegistry.keys()].join(", ")})`);
     console.log(`\nOpen Claw3D → ws://localhost:${ADAPTER_PORT}\n`);
   });
 

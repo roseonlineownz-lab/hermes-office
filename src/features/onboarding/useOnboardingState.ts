@@ -43,7 +43,10 @@ export const useOnboardingState = (): OnboardingStateReturn => {
   const [completed, setCompleted] = useState<boolean | null>(null);
 
   useEffect(() => {
-    setCompleted(readCompleted());
+    const timeout = window.setTimeout(() => {
+      setCompleted(readCompleted());
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, []);
 
   const completeOnboarding = useCallback(() => {
