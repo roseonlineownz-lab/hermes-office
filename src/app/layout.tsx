@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Bebas_Neue, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
+import { LiveKitProvider } from "@/lib/livekit/LiveKitContext";
+import { SpatialAudioProvider } from "@/lib/livekit/SpatialAudioContext";
 
 export const metadata: Metadata = {
   title: "Claw3D",
@@ -44,7 +46,7 @@ export default function RootLayout({
         />
       </head>
       <body className={`${display.variable} ${sans.variable} ${mono.variable} antialiased`}>
-        <main className="h-screen w-screen overflow-hidden bg-background">{children}</main>
+        <main className="h-screen w-screen overflow-hidden bg-background"><LiveKitProvider><SpatialAudioProvider>{children}</SpatialAudioProvider></LiveKitProvider></main>
       </body>
     </html>
   );

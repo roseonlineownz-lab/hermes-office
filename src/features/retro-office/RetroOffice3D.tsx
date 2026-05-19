@@ -225,6 +225,7 @@ import {
   CameraAnimator as CameraPresetAnimator,
   FollowCamController as FollowCamSystem,
 } from "@/features/retro-office/systems/cameraLighting";
+import { SpatialAudioBridge } from "@/features/retro-office/systems/SpatialAudioBridge";
 import {
   FloorRaycaster as SceneFloorRaycaster,
   GameLoop as SceneGameLoop,
@@ -248,6 +249,7 @@ type FeedEvent = {
 };
 type OfficeActionSnapshot = {
   id?: string;
+  time?: string | null;
   agent?: string;
   title?: string;
   status?: string;
@@ -255,15 +257,6 @@ type OfficeActionSnapshot = {
   lastLog?: string | null;
   room?: string | null;
   receipt?: string | null;
-};
-type LiveReceiptEntry = {
-  agentId: string;
-  name: string;
-  status: SceneActor["status"];
-  state: RenderAgent["state"] | "unknown";
-  text: string;
-  ts: number;
-  kind: "status" | "reply";
 };
 
 const EMPTY_STRING_RECORD: Record<string, string> = {};
@@ -306,15 +299,6 @@ type DragState =
   | { kind: "moving"; uid: string }
   | { kind: "placing"; itemType: string };
 
-const isOfficeAgent = (agent: SceneActor): agent is OfficeAgent =>
-  !("role" in agent && agent.role === "janitor");
-
-const formatReceiptAge = (timestamp: number) => {
-  const ageMs = Math.max(0, Date.now() - timestamp);
-  if (ageMs < 1000) return "now";
-  if (ageMs < 60_000) return `${Math.floor(ageMs / 1000)}s`;
-  return `${Math.floor(ageMs / 60_000)}m`;
-};
 
 function CeoSuperSaiyanAura({
   ceoAgentId,
@@ -3430,6 +3414,7 @@ export function RetroOffice3D({
       const status = action.status ?? "running";
       const progress = typeof action.progress === "number" ? ` ${action.progress}%` : "";
       const line = `${status.toUpperCase()}${progress} · ${action.title ?? "Nova action"}${action.lastLog ? ` · ${action.lastLog}` : ""}`;
+      const actionUpdatedAt = action.time ? Date.parse(action.time) : Number.NaN;
       next[agentId] = {
         agentId,
         agentName: base?.agentName ?? agent?.name ?? action.agent ?? agentId,
@@ -3437,7 +3422,7 @@ export function RetroOffice3D({
         title: base?.title ?? action.title ?? "Nova action",
         subtitle: action.receipt ? `receipt: ${action.receipt}` : (base?.subtitle ?? "live nova-run action"),
         browserUrl: base?.browserUrl ?? null,
-        updatedAt: Date.now(),
+        updatedAt: Number.isFinite(actionUpdatedAt) ? actionUpdatedAt : (base?.updatedAt ?? 0),
         live: status === "running" || status === "waiting",
         entries: [
           { kind: (status === "error" ? "tool" : "thinking") as OfficeDeskMonitorEntry["kind"], text: line, live: status === "running" || status === "waiting" },
@@ -3674,10 +3659,7 @@ export function RetroOffice3D({
   const standupActive =
     standupMeeting?.phase === "gathering" ||
     standupMeeting?.phase === "in_progress";
-  const standupSpeakerCard =
-    standupMeeting?.cards.find(
-      (card) => card.agentId === standupMeeting.currentSpeakerAgentId,
-    ) ?? null;
+
   const activeMonitorComputer = useMemo(() => {
     if (!monitorAgentId) return null;
     const deskIdx = assignedDeskIndexByAgentId[monitorAgentId];
@@ -5968,14 +5950,19 @@ export function RetroOffice3D({
     });
     if (!matched) return;
     lastNovaAgentPulseRef.current = key;
-    setSpotlightAgentId(matched.id);
-    setMoodByAgentId((prev) => ({
-      ...prev,
-      [matched.id]: {
-        emoji: novaEventLatest.mode === "error" ? "⚠️" : novaEventLatest.mode === "success" ? "✅" : novaEventLatest.mode === "testing" ? "🧪" : "⚡",
-        ts: Date.now(),
-      },
-    }));
+    const pulseTimer = window.setTimeout(() => {
+      setSpotlightAgentId(matched.id);
+      setMoodByAgentId((prev) => ({
+        ...prev,
+        [matched.id]: {
+          emoji: novaEventLatest.mode === "error" ? "⚠️" : novaEventLatest.mode === "success" ? "✅" : novaEventLatest.mode === "testing" ? "🧪" : "⚡",
+          ts: Date.now(),
+        },
+      }));
+    }, 0);
+    return () => {
+      window.clearTimeout(pulseTimer);
+    };
   }, [agents, novaEventLatest]);
   const remoteVisualAgentCount = agents.filter((agent) => isRemoteOfficeAgentId(agent.id)).length;
   const localVisualAgentCount = Math.max(agents.length - remoteVisualAgentCount, 0);
@@ -6139,6 +6126,9 @@ export function RetroOffice3D({
               agentsRef={renderAgentsRef}
               agentLookupRef={renderAgentLookupRef}
             />
+
+            {/* Sync camera position to spatial audio listener */}
+            <SpatialAudioBridge />
 
             {/* Keep office lighting static to avoid extra scene churn from ambience effects. */}
             <ambientLight

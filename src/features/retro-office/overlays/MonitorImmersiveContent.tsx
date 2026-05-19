@@ -128,7 +128,7 @@ function MonitorBrowserContent({
   const [browserView, setBrowserView] = useState<"embed" | "screenshot">(
     prefersScreenshot ? "screenshot" : "embed",
   );
-  const [embedLoaded, setEmbedLoaded] = useState(false);
+  const [, setEmbedLoaded] = useState(false);
   const embedFrameRef = useRef<HTMLIFrameElement | null>(null);
   const browserPreview = useBrowserPreviewScreenshot({
     browserUrl,

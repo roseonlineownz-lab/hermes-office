@@ -4,14 +4,14 @@
  * Uses localStorage so the wizard only shows once per browser.
  * The key is scoped to the Claw3D app to avoid collisions.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 const STORAGE_KEY = "claw3d:onboarding:completed";
 
 const readCompleted = (): boolean => {
   if (typeof window === "undefined") return true;
   try {
-    return window.localStorage.getItem(STORAGE_KEY) !== "false";
+    return window.localStorage.getItem(STORAGE_KEY) === "true";
   } catch {
     return true;
   }
@@ -40,11 +40,7 @@ export type OnboardingStateReturn = {
 };
 
 export const useOnboardingState = (): OnboardingStateReturn => {
-  const [completed, setCompleted] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    setCompleted(readCompleted());
-  }, []);
+  const [completed, setCompleted] = useState<boolean>(readCompleted);
 
   const completeOnboarding = useCallback(() => {
     setCompleted(true);

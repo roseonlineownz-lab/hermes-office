@@ -20,6 +20,7 @@ export const useVoiceReplyPlayback = (params: {
   voiceId?: string | null;
   speed?: number;
   onProviderFallback?: (provider: VoiceReplyProvider) => void;
+  onPlayAudio?: (buffer: AudioBuffer) => Promise<void>;
 }) => {
   const {
     enabled,
@@ -27,6 +28,7 @@ export const useVoiceReplyPlayback = (params: {
     voiceId = null,
     speed = 1,
     onProviderFallback,
+    onPlayAudio,
   } = params;
   const queueRef = useRef<VoiceReplyPlaybackRequest[]>([]);
   const processingRef = useRef(false);
@@ -36,7 +38,6 @@ export const useVoiceReplyPlayback = (params: {
   const audioUrlRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
-  const elevenLabsFallbackWarnedRef = useRef(false);
   const [playing, setPlaying] = useState(false);
 
   const releaseAudio = useCallback(() => {
@@ -114,6 +115,15 @@ export const useVoiceReplyPlayback = (params: {
           const buffer = await blob.arrayBuffer();
           const decoded = await audioContext.decodeAudioData(buffer.slice(0));
           if (generation !== generationRef.current) return;
+          if (onPlayAudio) {
+            setPlaying(true);
+            try {
+              await onPlayAudio(decoded);
+            } finally {
+              setPlaying(false);
+            }
+            return;
+          }
           const source = audioContext.createBufferSource();
           source.buffer = decoded;
           source.connect(audioContext.destination);
@@ -178,7 +188,7 @@ export const useVoiceReplyPlayback = (params: {
         }
       });
     },
-    [getAudioContext, releaseAudio]
+    [getAudioContext, releaseAudio, onPlayAudio]
   );
 
   const requestAudio = useCallback(
