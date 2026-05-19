@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { NextResponse } from "next/server";
 
@@ -16,6 +16,7 @@ type OfficeAction = {
   agent: string;
   title: string;
   command: string | null;
+  room: string | null;
   status: "running" | "success" | "error" | "waiting" | "unknown";
   progress: number | null;
   phase: string | null;
@@ -25,6 +26,13 @@ type OfficeAction = {
 
 const asString = (value: unknown): string | null =>
   typeof value === "string" && value.trim() ? value.trim() : null;
+
+const clampText = (value: string | null, max = 220): string | null => {
+  if (!value) return null;
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return null;
+  return normalized.slice(0, max);
+};
 
 const asProgress = (value: unknown): number | null => {
   if (typeof value !== "number" || !Number.isFinite(value)) return null;
@@ -56,6 +64,7 @@ const parseActionLine = (line: string): OfficeAction | null => {
       agent,
       title,
       command: asString(payload.command),
+      room: asString(payload.room),
       status: asStatus(payload.status),
       progress: asProgress(payload.progress),
       phase: asString(payload.phase),
@@ -99,5 +108,38 @@ export async function GET() {
       latest: null,
       error: error instanceof Error ? error.message : "action log unavailable",
     });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const payload = (await request.json()) as Record<string, unknown>;
+    const id = asString(payload.id) ?? asString(payload.run_id) ?? `office-${Date.now()}`;
+    const now = new Date().toISOString();
+    const action: OfficeAction = {
+      id,
+      time: asString(payload.time) ?? asString(payload.ts) ?? now,
+      agent: asString(payload.agent) ?? "hermes",
+      title: clampText(asString(payload.title) ?? asString(payload.task), 120) ?? "Office action",
+      command: clampText(asString(payload.command), 220),
+      room: asString(payload.room),
+      status: asStatus(payload.status),
+      progress: asProgress(payload.progress),
+      phase: clampText(asString(payload.phase), 80),
+      lastLog: clampText(asString(payload.lastLog) ?? asString(payload.last_log), 220),
+      receipt: asString(payload.receipt),
+    };
+    await mkdir(join(RECEIPT_DIR, "actions"), { recursive: true });
+    await appendFile(ACTION_LOG, `${JSON.stringify(action)}\n`, "utf8");
+    return NextResponse.json({ ok: true, action });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        source: ACTION_LOG,
+        error: error instanceof Error ? error.message : "failed to append action",
+      },
+      { status: 500 },
+    );
   }
 }

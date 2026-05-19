@@ -52,7 +52,7 @@ import { buildMockPhoneCallScenario } from "@/lib/office/call/mock";
 import type { MockPhoneCallScenario } from "@/lib/office/call/types";
 import { buildMockTextMessageScenario } from "@/lib/office/text/mock";
 import type { MockTextMessageScenario } from "@/lib/office/text/types";
-import type { OfficeDeskMonitor } from "@/lib/office/deskMonitor";
+import type { OfficeDeskMonitor, OfficeDeskMonitorEntry } from "@/lib/office/deskMonitor";
 import type { OfficeAnimationState } from "@/lib/office/eventTriggers";
 import type { StandupMeeting } from "@/lib/office/standup/types";
 import type { SkillStatusEntry } from "@/lib/skills/types";
@@ -170,6 +170,7 @@ import type {
 } from "@/features/retro-office/core/types";
 import type { NavGrid } from "@/features/retro-office/core/navigation";
 import type { OfficeLayoutSnapshot } from "@/lib/office/layoutSnapshot";
+import type { OfficeInteractionTargetId } from "@/lib/office/places";
 import { AgentModel as AgentObjectModel } from "@/features/retro-office/objects/agents";
 import { JukeboxModel as InteractiveJukeboxModel } from "@/features/retro-office/objects/Jukebox";
 import {
@@ -244,6 +245,16 @@ type FeedEvent = {
   text: string;
   ts: number;
   kind?: "status" | "reply";
+};
+type OfficeActionSnapshot = {
+  id?: string;
+  agent?: string;
+  title?: string;
+  status?: string;
+  progress?: number | null;
+  lastLog?: string | null;
+  room?: string | null;
+  receipt?: string | null;
 };
 type LiveReceiptEntry = {
   agentId: string;
@@ -1040,6 +1051,7 @@ function useAgentTick(
   phoneBoothHoldByAgentId: Record<string, boolean> = {},
   qaHoldByAgentId: Record<string, boolean> = {},
   githubReviewByAgentId: Record<string, boolean> = {},
+  jukeboxHoldByAgentId: Record<string, boolean> = {},
   standupMeeting: StandupMeeting | null = null,
 ) {
   const renderAgentsRef = useRef<RenderAgent[]>([]);
@@ -1177,8 +1189,12 @@ function useAgentTick(
         agentSignal.includes("lead") || agentSignal.includes("outreach");
       const inferredPhoneBoothHold =
         agentSignal.includes("publish") ||
-        agentSignal.includes("viral") ||
-        agentSignal.includes("media");
+        agentSignal.includes("viral");
+      const inferredJukeboxHold =
+        agentSignal.includes("media") ||
+        agentSignal.includes("render") ||
+        agentSignal.includes("music") ||
+        agentSignal.includes("jukebox");
       const assignedDeskIndex = assignedDeskIndexByAgentId[agent.id];
       if (
         typeof assignedDeskIndex === "number" &&
@@ -1212,6 +1228,8 @@ function useAgentTick(
       const explicitQaHold = Boolean(qaHoldByAgentId[agent.id]) || inferredQaHold;
       const explicitGithubHold =
         Boolean(githubReviewByAgentId[agent.id]) || inferredGithubHold;
+      const explicitJukeboxHold =
+        Boolean(jukeboxHoldByAgentId[agent.id]) || inferredJukeboxHold;
       if (
         explicitGymHold &&
         gymWorkoutLocations.length > 0 &&
@@ -1266,6 +1284,11 @@ function useAgentTick(
         (furnitureRef.current ?? []).find(
           (item) => item.type === "phone_booth",
         ) ?? null;
+      const jukeboxItem =
+        (furnitureRef.current ?? []).find((item) => item.type === "jukebox") ?? null;
+      const jukeboxTarget = jukeboxItem
+        ? { x: jukeboxItem.x + 42, y: jukeboxItem.y + 48, facing: Math.PI }
+        : { x: 925, y: 118, facing: Math.PI };
 
       if (agent.status === "working" && !explicitDeskHold && deskPos)
         stickyUntilRef.current.set(agent.id, now + DESK_STICKY_MS);
@@ -1282,6 +1305,7 @@ function useAgentTick(
               explicitPhoneBoothHold ||
               explicitQaHold ||
               explicitGithubHold ||
+              explicitJukeboxHold ||
               agent.status === "working" ||
               stickyUntil > now
             ? "working"
@@ -1466,6 +1490,39 @@ function useAgentTick(
               ? "standing"
               : "walking";
           ns.facing = serverRoomRoute.facing;
+        } else if (explicitJukeboxHold) {
+          ns.pingPongUntil = undefined;
+          ns.pingPongTargetX = undefined;
+          ns.pingPongTargetY = undefined;
+          ns.pingPongFacing = undefined;
+          ns.pingPongPartnerId = undefined;
+          ns.pingPongTableUid = undefined;
+          ns.pingPongSide = undefined;
+          ns.walkSpeed =
+            existing.pingPongPreviousWalkSpeed ?? existing.walkSpeed;
+          ns.pingPongPreviousWalkSpeed = undefined;
+          ns.interactionTarget = "jukebox";
+          ns.smsBoothStage = undefined;
+          ns.phoneBoothStage = undefined;
+          ns.serverRoomStage = undefined;
+          ns.gymStage = undefined;
+          ns.qaLabStage = undefined;
+          ns.qaLabStationType = undefined;
+          ns.workoutStyle = undefined;
+          const targetChanged =
+            existing.targetX !== jukeboxTarget.x ||
+            existing.targetY !== jukeboxTarget.y ||
+            existing.interactionTarget !== "jukebox";
+          ns.targetX = jukeboxTarget.x;
+          ns.targetY = jukeboxTarget.y;
+          if (targetChanged) {
+            ns.path = planPath(existing.x, existing.y, jukeboxTarget.x, jukeboxTarget.y);
+          }
+          ns.state =
+            Math.hypot(existing.x - jukeboxTarget.x, existing.y - jukeboxTarget.y) < 15
+              ? "dancing"
+              : "walking";
+          ns.facing = jukeboxTarget.facing;
         } else if (explicitSmsBoothHold) {
           const smsBoothRoute = resolveSmsBoothRoute(
             smsBoothItem,
@@ -1678,7 +1735,9 @@ function useAgentTick(
                               x: serverRoomRoute.targetX,
                               y: serverRoomRoute.targetY,
                             }
-                          : deskPos;
+                          : explicitJukeboxHold
+                            ? { x: jukeboxTarget.x, y: jukeboxTarget.y }
+                            : deskPos;
             if (!nextTarget) {
               ns.interactionTarget = undefined;
               ns.serverRoomStage = undefined;
@@ -1709,16 +1768,19 @@ function useAgentTick(
                       ? "qa_lab"
                       : explicitGithubHold
                         ? "server_room"
-                        : "desk";
+                        : explicitJukeboxHold
+                          ? "jukebox"
+                          : "desk";
             ns.phoneBoothStage =
               explicitMeetingHold ||
               explicitGymHold ||
               explicitSmsBoothHold ||
+              explicitJukeboxHold ||
               !explicitPhoneBoothHold
                 ? undefined
                 : phoneBoothRoute.stage;
             ns.smsBoothStage =
-              explicitMeetingHold || explicitGymHold || !explicitSmsBoothHold
+              explicitMeetingHold || explicitGymHold || explicitJukeboxHold || !explicitSmsBoothHold
                 ? undefined
                 : smsBoothRoute.stage;
             ns.serverRoomStage = explicitMeetingHold
@@ -1727,7 +1789,7 @@ function useAgentTick(
                 ? undefined
                 : explicitSmsBoothHold
                   ? undefined
-                  : explicitPhoneBoothHold
+                  : explicitPhoneBoothHold || explicitJukeboxHold
                     ? undefined
                     : explicitGithubHold
                       ? serverRoomRoute.stage
@@ -1830,7 +1892,9 @@ function useAgentTick(
                             x: serverRoomRoute.targetX,
                             y: serverRoomRoute.targetY,
                           }
-                        : (deskPos ?? { x: sx, y: sy })
+                        : explicitJukeboxHold
+                          ? { x: jukeboxTarget.x, y: jukeboxTarget.y }
+                          : (deskPos ?? { x: sx, y: sy })
             : { x: sx, y: sy };
         ns = {
           x: sx,
@@ -1849,6 +1913,7 @@ function useAgentTick(
               explicitPhoneBoothHold ||
               explicitQaHold ||
               explicitGithubHold ||
+              explicitJukeboxHold ||
               deskPos)
               ? "walking"
               : "standing",
@@ -1864,11 +1929,13 @@ function useAgentTick(
                     ? "qa_lab"
                     : explicitGithubHold
                       ? "server_room"
-                      : deskPos
+                      : explicitJukeboxHold
+                        ? "jukebox"
+                        : deskPos
                         ? "desk"
                         : undefined,
           smsBoothStage:
-            explicitMeetingHold || explicitGymHold || !explicitSmsBoothHold
+            explicitMeetingHold || explicitGymHold || explicitJukeboxHold || !explicitSmsBoothHold
               ? undefined
               : smsBoothRoute.stage,
           phoneBoothStage:
@@ -1883,6 +1950,7 @@ function useAgentTick(
             explicitGymHold ||
             explicitSmsBoothHold ||
             explicitPhoneBoothHold ||
+            explicitJukeboxHold ||
             !explicitGithubHold
               ? undefined
               : serverRoomRoute.stage,
@@ -1894,6 +1962,7 @@ function useAgentTick(
             explicitMeetingHold ||
             explicitSmsBoothHold ||
             explicitPhoneBoothHold ||
+            explicitJukeboxHold ||
             !explicitQaHold
               ? undefined
               : qaLabRoute.stage,
@@ -1930,6 +1999,7 @@ function useAgentTick(
     qaHoldByAgentId,
     qaLabStations,
     githubReviewByAgentId,
+    jukeboxHoldByAgentId,
     meetingParticipants,
     meetingSeatLocations,
     pickRoamPoint,
@@ -2747,9 +2817,9 @@ export function RetroOffice3D({
   );
   const [officeActionStatus, setOfficeActionStatus] = useState<{
     ok?: boolean;
-    active?: Array<{ id?: string; agent?: string; title?: string; status?: string; progress?: number | null; lastLog?: string | null }>;
-    recent?: Array<{ id?: string; agent?: string; title?: string; status?: string; progress?: number | null; lastLog?: string | null }>;
-    latest?: { id?: string; agent?: string; title?: string; status?: string; progress?: number | null; lastLog?: string | null } | null;
+    active?: OfficeActionSnapshot[];
+    recent?: OfficeActionSnapshot[];
+    latest?: OfficeActionSnapshot | null;
   } | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -2779,6 +2849,22 @@ export function RetroOffice3D({
       : officeActionStatus?.ok === false
         ? "action log offline"
         : "waiting for nova-run";
+  const normalizeActionRoom = useCallback((action: OfficeActionSnapshot): OfficeInteractionTargetId | null => {
+    const explicitRoom = `${action.room ?? ""}`.trim().toLowerCase().replace(/[\s-]+/g, "_");
+    if (["qa", "qa_lab", "test_lab", "verify"].includes(explicitRoom)) return "qa_lab";
+    if (["server", "server_room", "github", "core", "ops"].includes(explicitRoom)) return "server_room";
+    if (["sms", "sms_booth", "lead", "sales", "outreach"].includes(explicitRoom)) return "sms_booth";
+    if (["phone", "phone_booth", "call"].includes(explicitRoom)) return "phone_booth";
+    if (["media", "render", "music", "jukebox", "sound"].includes(explicitRoom)) return "jukebox";
+    if (["desk", "workbench"].includes(explicitRoom)) return "desk";
+    const text = `${action.agent ?? ""} ${action.title ?? ""}`.toLowerCase();
+    if (/qa|test|typecheck|smoke|verify|review/.test(text)) return "qa_lab";
+    if (/lead|sales|outreach|sms|whatsapp|mail/.test(text)) return "sms_booth";
+    if (/render|media|video|music|suno|jukebox|sound|clip|comfy/.test(text)) return "jukebox";
+    if (/call|phone|voice/.test(text)) return "phone_booth";
+    if (/hermes|core|github|commit|push|router|bridge|server|freebuff|windows/.test(text)) return "server_room";
+    return null;
+  }, []);
   const actionByAgentId = useMemo(() => {
     const runningOrRecent = [
       ...(officeActionStatus?.active ?? []),
@@ -2786,7 +2872,8 @@ export function RetroOffice3D({
     ];
     const next: Record<string, (typeof runningOrRecent)[number]> = {};
     for (const action of runningOrRecent) {
-      const rawAgent = (action.agent ?? "").toLowerCase();
+      const rawAgent = (action.agent ?? "").toLowerCase().trim();
+      if (!rawAgent) continue;
       const matchedAgent = agents.find((agent) => {
         const id = agent.id.toLowerCase();
         const name = agent.name.toLowerCase();
@@ -2809,29 +2896,50 @@ export function RetroOffice3D({
   const actionQaHoldByAgentId = useMemo(() => {
     const next: Record<string, boolean> = {};
     for (const [agentId, action] of Object.entries(actionByAgentId)) {
-      const text = `${action.agent ?? ""} ${action.title ?? ""}`.toLowerCase();
-      if (/qa|test|typecheck|smoke|verify|review/.test(text) && action.status !== "success") next[agentId] = true;
+      if (normalizeActionRoom(action) === "qa_lab" && action.status !== "success") next[agentId] = true;
     }
     return next;
-  }, [actionByAgentId]);
+  }, [actionByAgentId, normalizeActionRoom]);
   const actionSmsBoothHoldByAgentId = useMemo(() => {
     const next: Record<string, boolean> = {};
     for (const [agentId, action] of Object.entries(actionByAgentId)) {
-      const text = `${action.agent ?? ""} ${action.title ?? ""}`.toLowerCase();
-      if (/lead|sales|outreach|sms|whatsapp|mail/.test(text) && action.status !== "success") next[agentId] = true;
+      if (normalizeActionRoom(action) === "sms_booth" && action.status !== "success") next[agentId] = true;
     }
     return next;
-  }, [actionByAgentId]);
+  }, [actionByAgentId, normalizeActionRoom]);
   const actionGithubHoldByAgentId = useMemo(() => {
     const next: Record<string, boolean> = {};
     for (const [agentId, action] of Object.entries(actionByAgentId)) {
-      const text = `${action.agent ?? ""} ${action.title ?? ""}`.toLowerCase();
-      if (/hermes|core|github|commit|push|router|bridge|server|freebuff|windows/.test(text) && action.status !== "success") next[agentId] = true;
+      if (normalizeActionRoom(action) === "server_room" && action.status !== "success") next[agentId] = true;
     }
     return next;
-  }, [actionByAgentId]);
-  const resolvedDeskHoldByAgentId =
-    animationState?.deskHoldByAgentId ?? deskHoldByAgentId;
+  }, [actionByAgentId, normalizeActionRoom]);
+  const actionJukeboxHoldByAgentId = useMemo(() => {
+    const next: Record<string, boolean> = {};
+    for (const [agentId, action] of Object.entries(actionByAgentId)) {
+      if (normalizeActionRoom(action) === "jukebox" && action.status !== "success") next[agentId] = true;
+    }
+    return next;
+  }, [actionByAgentId, normalizeActionRoom]);
+  const actionPhoneBoothHoldByAgentId = useMemo(() => {
+    const next: Record<string, boolean> = {};
+    for (const [agentId, action] of Object.entries(actionByAgentId)) {
+      if (normalizeActionRoom(action) === "phone_booth" && action.status !== "success") next[agentId] = true;
+    }
+    return next;
+  }, [actionByAgentId, normalizeActionRoom]);
+  const actionDeskHoldByAgentId = useMemo(() => {
+    const next: Record<string, boolean> = {};
+    for (const [agentId, action] of Object.entries(actionByAgentId)) {
+      if (normalizeActionRoom(action) === "desk" && action.status !== "success") next[agentId] = true;
+    }
+    return next;
+  }, [actionByAgentId, normalizeActionRoom]);
+  const baseDeskHoldByAgentId = animationState?.deskHoldByAgentId ?? deskHoldByAgentId;
+  const resolvedDeskHoldByAgentId = useMemo(
+    () => ({ ...baseDeskHoldByAgentId, ...actionDeskHoldByAgentId }),
+    [baseDeskHoldByAgentId, actionDeskHoldByAgentId],
+  );
   const resolvedGymHoldByAgentId =
     animationState?.gymHoldByAgentId ?? gymHoldByAgentId;
   const baseSmsBoothHoldByAgentId =
@@ -2840,8 +2948,12 @@ export function RetroOffice3D({
     () => ({ ...baseSmsBoothHoldByAgentId, ...actionSmsBoothHoldByAgentId }),
     [baseSmsBoothHoldByAgentId, actionSmsBoothHoldByAgentId],
   );
-  const resolvedPhoneBoothHoldByAgentId =
+  const basePhoneBoothHoldByAgentId =
     animationState?.phoneBoothHoldByAgentId ?? EMPTY_BOOLEAN_RECORD;
+  const resolvedPhoneBoothHoldByAgentId = useMemo(
+    () => ({ ...basePhoneBoothHoldByAgentId, ...actionPhoneBoothHoldByAgentId }),
+    [basePhoneBoothHoldByAgentId, actionPhoneBoothHoldByAgentId],
+  );
   const baseQaHoldByAgentId = animationState?.qaHoldByAgentId ?? qaHoldByAgentId;
   const resolvedQaHoldByAgentId = useMemo(
     () => ({ ...baseQaHoldByAgentId, ...actionQaHoldByAgentId }),
@@ -2856,8 +2968,12 @@ export function RetroOffice3D({
     () => ({ ...baseGithubReviewByAgentId, ...actionGithubHoldByAgentId }),
     [baseGithubReviewByAgentId, actionGithubHoldByAgentId],
   );
-  const resolvedJukeboxHoldByAgentId =
+  const baseJukeboxHoldByAgentId =
     animationState?.jukeboxHoldByAgentId ?? EMPTY_BOOLEAN_RECORD;
+  const resolvedJukeboxHoldByAgentId = useMemo(
+    () => ({ ...baseJukeboxHoldByAgentId, ...actionJukeboxHoldByAgentId }),
+    [baseJukeboxHoldByAgentId, actionJukeboxHoldByAgentId],
+  );
   const isJukeboxActive = Object.values(resolvedJukeboxHoldByAgentId).some(
     Boolean,
   );
@@ -3276,6 +3392,7 @@ export function RetroOffice3D({
     resolvedPhoneBoothHoldByAgentId,
     resolvedQaHoldByAgentId,
     resolvedGithubReviewByAgentId,
+    resolvedJukeboxHoldByAgentId,
     standupMeeting,
   );
   useEffect(() => {
@@ -3305,8 +3422,34 @@ export function RetroOffice3D({
       window.clearInterval(timer);
     };
   }, [renderAgentsRef]);
+  const effectiveMonitorByAgentId = useMemo(() => {
+    const next: OfficeDeskMonitorMap = { ...monitorByAgentId };
+    for (const [agentId, action] of Object.entries(actionByAgentId)) {
+      const agent = agents.find((entry) => entry.id === agentId);
+      const base = next[agentId];
+      const status = action.status ?? "running";
+      const progress = typeof action.progress === "number" ? ` ${action.progress}%` : "";
+      const line = `${status.toUpperCase()}${progress} · ${action.title ?? "Nova action"}${action.lastLog ? ` · ${action.lastLog}` : ""}`;
+      next[agentId] = {
+        agentId,
+        agentName: base?.agentName ?? agent?.name ?? action.agent ?? agentId,
+        mode: status === "error" ? "error" : status === "waiting" ? "waiting" : "coding",
+        title: base?.title ?? action.title ?? "Nova action",
+        subtitle: action.receipt ? `receipt: ${action.receipt}` : (base?.subtitle ?? "live nova-run action"),
+        browserUrl: base?.browserUrl ?? null,
+        updatedAt: Date.now(),
+        live: status === "running" || status === "waiting",
+        entries: [
+          { kind: (status === "error" ? "tool" : "thinking") as OfficeDeskMonitorEntry["kind"], text: line, live: status === "running" || status === "waiting" },
+          ...(base?.entries ?? []),
+        ].slice(0, 8),
+        editor: base?.editor ?? null,
+      };
+    }
+    return next;
+  }, [actionByAgentId, agents, monitorByAgentId]);
   const activeMonitor = monitorAgentId
-    ? (monitorByAgentId[monitorAgentId] ?? null)
+    ? (effectiveMonitorByAgentId[monitorAgentId] ?? null)
     : null;
   const agentStatusLookup = useMemo(
     () =>
