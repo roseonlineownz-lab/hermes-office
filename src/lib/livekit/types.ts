@@ -18,6 +18,8 @@ export interface LiveKitTokenRequest {
   roomName: string;
   /** Display name / identity of the participant */
   participantName: string;
+  /** Optional source identity/agent hint, e.g. hermes/openclaw/media */
+  agentId?: string;
 }
 
 export interface LiveKitTokenResponse {
@@ -25,6 +27,16 @@ export interface LiveKitTokenResponse {
   token: string;
   /** WebSocket URL of the LiveKit server */
   url: string;
+  /** Resolved Nova source identity metadata for UI/room routing */
+  identity?: {
+    id: string;
+    label: string;
+    pet: string;
+    voiceProfile: string;
+    color: string;
+    livekitIdentity: string;
+    claw3dAvatar: string;
+  };
 }
 
 // ── Room State ───────────────────────────────────────────────────────────────

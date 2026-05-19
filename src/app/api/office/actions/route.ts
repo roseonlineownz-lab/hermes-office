@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { NextResponse } from "next/server";
+import { resolveNovaIdentity } from "@/lib/identity/novaIdentities";
 
 export const runtime = "nodejs";
 
@@ -22,6 +23,30 @@ type OfficeAction = {
   phase: string | null;
   lastLog: string | null;
   receipt: string | null;
+  identity: {
+    id: string;
+    label: string;
+    pet: string;
+    voiceProfile: string;
+    color: string;
+    livekitIdentity: string;
+    claw3dAvatar: string;
+    aliases: string[];
+  };
+};
+
+const identityFor = (agent: string, text = "") => {
+  const identity = resolveNovaIdentity(`${agent} ${text}`);
+  return {
+    id: identity.id,
+    label: identity.label,
+    pet: identity.pet,
+    voiceProfile: identity.voiceProfile,
+    color: identity.color,
+    livekitIdentity: identity.livekitIdentity,
+    claw3dAvatar: identity.claw3dAvatar,
+    aliases: identity.aliases,
+  };
 };
 
 const asString = (value: unknown): string | null =>
@@ -58,6 +83,7 @@ const parseActionLine = (line: string): OfficeAction | null => {
     const id = asString(payload.id) ?? asString(payload.run_id) ?? `${Date.now()}`;
     const agent = asString(payload.agent) ?? "hermes";
     const title = asString(payload.title) ?? asString(payload.task) ?? "Nova action";
+    const identity = identityFor(agent, title);
     return {
       id,
       time: asString(payload.time) ?? asString(payload.ts),
@@ -70,6 +96,7 @@ const parseActionLine = (line: string): OfficeAction | null => {
       phase: asString(payload.phase),
       lastLog: asString(payload.lastLog) ?? asString(payload.last_log),
       receipt: asString(payload.receipt),
+      identity,
     };
   } catch {
     return null;
@@ -116,11 +143,13 @@ export async function POST(request: Request) {
     const payload = (await request.json()) as Record<string, unknown>;
     const id = asString(payload.id) ?? asString(payload.run_id) ?? `office-${Date.now()}`;
     const now = new Date().toISOString();
+    const actionAgent = asString(payload.agent) ?? "hermes";
+    const actionTitle = clampText(asString(payload.title) ?? asString(payload.task), 120) ?? "Office action";
     const action: OfficeAction = {
       id,
       time: asString(payload.time) ?? asString(payload.ts) ?? now,
-      agent: asString(payload.agent) ?? "hermes",
-      title: clampText(asString(payload.title) ?? asString(payload.task), 120) ?? "Office action",
+      agent: actionAgent,
+      title: actionTitle,
       command: clampText(asString(payload.command), 220),
       room: asString(payload.room),
       status: asStatus(payload.status),
@@ -128,6 +157,7 @@ export async function POST(request: Request) {
       phase: clampText(asString(payload.phase), 80),
       lastLog: clampText(asString(payload.lastLog) ?? asString(payload.last_log), 220),
       receipt: asString(payload.receipt),
+      identity: identityFor(actionAgent, actionTitle),
     };
     await mkdir(join(RECEIPT_DIR, "actions"), { recursive: true });
     await appendFile(ACTION_LOG, `${JSON.stringify(action)}\n`, "utf8");

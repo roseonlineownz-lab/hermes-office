@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { AccessToken } from "livekit-server-sdk";
 import type { LiveKitTokenRequest, LiveKitTokenResponse } from "@/lib/livekit/types";
+import { resolveNovaIdentity } from "@/lib/identity/novaIdentities";
 
 // ── Configuration ────────────────────────────────────────────────────────────
 
@@ -32,9 +33,22 @@ export async function POST(request: Request) {
       );
     }
 
+    const identity = resolveNovaIdentity(`${body.agentId ?? ""} ${body.participantName}`);
+    const participantIdentity = body.participantName.startsWith("agent:")
+      ? body.participantName
+      : identity.livekitIdentity;
+
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
-      identity: body.participantName,
-      name: body.participantName,
+      identity: participantIdentity,
+      name: identity.label,
+      metadata: JSON.stringify({
+        novaIdentity: identity.id,
+        label: identity.label,
+        pet: identity.pet,
+        voiceProfile: identity.voiceProfile,
+        color: identity.color,
+        claw3dAvatar: identity.claw3dAvatar,
+      }),
       ttl: TOKEN_TTL_SECONDS,
     });
 
@@ -51,6 +65,15 @@ export async function POST(request: Request) {
     const response: LiveKitTokenResponse = {
       token,
       url: LIVEKIT_URL,
+      identity: {
+        id: identity.id,
+        label: identity.label,
+        pet: identity.pet,
+        voiceProfile: identity.voiceProfile,
+        color: identity.color,
+        livekitIdentity: identity.livekitIdentity,
+        claw3dAvatar: identity.claw3dAvatar,
+      },
     };
 
     return NextResponse.json(response);

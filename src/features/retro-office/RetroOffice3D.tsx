@@ -63,6 +63,7 @@ import {
   resolveAgentVoice,
   type OfficeSpeechLanguage,
 } from "@/lib/voiceReply/agentVoices";
+import { resolveNovaIdentity, type NovaIdentity } from "@/lib/identity/novaIdentities";
 import type { VoiceReplyProvider } from "@/lib/voiceReply/provider";
 import type {
   TaskBoardCard,
@@ -239,6 +240,10 @@ import {
 import type { OfficeCleaningCue } from "@/lib/office/janitorReset";
 
 type OfficeDeskMonitorMap = Record<string, OfficeDeskMonitor>;
+type NovaIdentitySnapshot = Pick<
+  NovaIdentity,
+  "id" | "label" | "pet" | "voiceProfile" | "color" | "livekitIdentity" | "claw3dAvatar" | "aliases"
+>;
 type RenderAgentUiSnapshot = Pick<RenderAgent, "state" | "status">;
 type FeedEvent = {
   id: string;
@@ -257,6 +262,7 @@ type OfficeActionSnapshot = {
   lastLog?: string | null;
   room?: string | null;
   receipt?: string | null;
+  identity?: NovaIdentitySnapshot;
 };
 
 const EMPTY_STRING_RECORD: Record<string, string> = {};
@@ -2856,12 +2862,21 @@ export function RetroOffice3D({
     ];
     const next: Record<string, (typeof runningOrRecent)[number]> = {};
     for (const action of runningOrRecent) {
-      const rawAgent = (action.agent ?? "").toLowerCase().trim();
-      if (!rawAgent) continue;
+      const rawAgent = (action.agent ?? action.identity?.id ?? "").toLowerCase().trim();
+      const identityAliases = [
+        action.identity?.id,
+        action.identity?.voiceProfile,
+        action.identity?.claw3dAvatar,
+        ...(action.identity?.aliases ?? []),
+      ]
+        .filter((alias): alias is string => Boolean(alias))
+        .map((alias) => alias.toLowerCase());
+      if (!rawAgent && identityAliases.length === 0) continue;
       const matchedAgent = agents.find((agent) => {
         const id = agent.id.toLowerCase();
         const name = agent.name.toLowerCase();
-        return rawAgent === id || rawAgent === name || id.includes(rawAgent) || name.includes(rawAgent) || rawAgent.includes(id);
+        const haystack = `${id} ${name} ${"subtitle" in agent ? (agent.subtitle ?? "") : ""}`.toLowerCase();
+        return rawAgent === id || rawAgent === name || id.includes(rawAgent) || name.includes(rawAgent) || rawAgent.includes(id) || identityAliases.some((alias) => haystack.includes(alias));
       });
       if (matchedAgent && !next[matchedAgent.id]) next[matchedAgent.id] = action;
     }
@@ -5880,6 +5895,7 @@ export function RetroOffice3D({
       eventbus?: boolean;
       agent?: string;
       requestedPet?: string;
+      identity?: NovaIdentitySnapshot;
     } | null;
   } | null>(null);
   useEffect(() => {
@@ -5901,8 +5917,9 @@ export function RetroOffice3D({
     };
   }, []);
   const novaEventLatest = novaEventStatus?.latest ?? null;
-  const novaEventAgentLabel = novaEventLatest?.agent
-    ? `${novaEventLatest.agent}${novaEventLatest.requestedPet ? ` · ${novaEventLatest.requestedPet}` : ""}`
+  const novaEventIdentity = novaEventLatest?.identity ?? resolveNovaIdentity(`${novaEventLatest?.agent ?? ""} ${novaEventLatest?.message ?? ""}`);
+  const novaEventAgentLabel = novaEventLatest
+    ? `${novaEventIdentity.label} · ${novaEventIdentity.pet}`
     : "default";
   const novaEventLabel = novaEventLatest
     ? `${novaEventLatest.mode ?? "event"}: ${novaEventLatest.message ?? "Nova event"}`
@@ -5910,7 +5927,7 @@ export function RetroOffice3D({
       ? "no heartbeat log"
       : "heartbeat pending";
   const novaEventTitle = novaEventLatest
-    ? `Last Nova event: ${novaEventLatest.time ?? "unknown"}; agent=${novaEventLatest.agent ?? "default"}; pet=${String(novaEventLatest.pet)}; eventbus=${String(novaEventLatest.eventbus)}`
+    ? `Last Nova event: ${novaEventLatest.time ?? "unknown"}; identity=${novaEventIdentity.id}; pet=${novaEventIdentity.pet}; voice=${novaEventIdentity.voiceProfile}; livekit=${novaEventIdentity.livekitIdentity}; eventbus=${String(novaEventLatest.eventbus)}`
     : "Nova event heartbeat not seen yet";
   const lastNovaAgentPulseRef = useRef("");
   const lastNovaEventSpokenRef = useRef("");
@@ -5921,29 +5938,22 @@ export function RetroOffice3D({
     const mode = (novaEventLatest.mode ?? "event").toLowerCase();
     if (!["testing", "success", "error", "working", "celebrating"].includes(mode)) return;
     lastNovaEventSpokenRef.current = key;
-    const agentName = novaEventLatest.agent ? `${novaEventLatest.agent} agent` : "Nova agent";
+    const agentName = novaEventIdentity.label;
     const spoken = `${agentName}: ${mode}. ${novaEventLatest.message}`.slice(0, 220);
     const language = detectOfficeSpeechLanguage(novaEventLatest.message);
     void playBoothVoice(spoken, {
-      agentId: novaEventLatest.agent ?? null,
+      agentId: novaEventIdentity.voiceProfile,
       language,
     });
-  }, [novaEventLatest, playBoothVoice, voiceRepliesEnabled]);
+  }, [novaEventIdentity.label, novaEventIdentity.voiceProfile, novaEventLatest, playBoothVoice, voiceRepliesEnabled]);
   useEffect(() => {
     if (!novaEventLatest?.agent) return;
     const key = `${novaEventLatest.time ?? ""}:${novaEventLatest.agent}:${novaEventLatest.mode ?? ""}:${novaEventLatest.message ?? ""}`;
     if (lastNovaAgentPulseRef.current === key) return;
-    const wanted = novaEventLatest.agent.toLowerCase();
-    const aliases =
-      wanted === "qa"
-        ? ["qa", "coder", "code", "review"]
-        : wanted === "media"
-          ? ["media", "publisher", "viral"]
-          : wanted === "leadgen"
-            ? ["leadgen", "lead", "outreach"]
-            : wanted === "jarvis" || wanted === "core"
-              ? [wanted, "jarvis", "core"]
-              : [wanted];
+    const wanted = novaEventIdentity.id.toLowerCase();
+    const aliases = [wanted, novaEventIdentity.voiceProfile, novaEventIdentity.claw3dAvatar, ...novaEventIdentity.aliases]
+      .map((alias) => alias.toLowerCase())
+      .filter(Boolean);
     const matched = agents.find((agent) => {
       const haystack = `${agent.id} ${agent.name} ${"subtitle" in agent ? (agent.subtitle ?? "") : ""}`.toLowerCase();
       return aliases.some((alias) => haystack.includes(alias));
@@ -5963,7 +5973,7 @@ export function RetroOffice3D({
     return () => {
       window.clearTimeout(pulseTimer);
     };
-  }, [agents, novaEventLatest]);
+  }, [agents, novaEventIdentity.aliases, novaEventIdentity.claw3dAvatar, novaEventIdentity.id, novaEventIdentity.voiceProfile, novaEventLatest]);
   const remoteVisualAgentCount = agents.filter((agent) => isRemoteOfficeAgentId(agent.id)).length;
   const localVisualAgentCount = Math.max(agents.length - remoteVisualAgentCount, 0);
   const remoteVisualErrorCount = agents.filter(
@@ -8319,11 +8329,12 @@ export function RetroOffice3D({
                 {visibleOfficeActions.map((action) => {
                   const status = action.status ?? "unknown";
                   const progress = typeof action.progress === "number" ? `${action.progress}%` : "--";
+                  const identity = action.identity ?? resolveNovaIdentity(`${action.agent ?? ""} ${action.title ?? ""}`);
                   return (
                     <div key={`${action.id ?? action.title}-${status}`} className="rounded-lg border border-emerald-400/15 bg-emerald-500/8 px-2 py-1.5">
                       <div className="flex items-center justify-between gap-2 text-emerald-100/90">
-                        <span className="truncate font-semibold uppercase tracking-[0.08em]">{action.agent ?? "agent"} · {action.title ?? "Nova action"}</span>
-                        <span className="shrink-0 text-emerald-200/70">{status} · {progress}</span>
+                        <span className="truncate font-semibold uppercase tracking-[0.08em]" style={{ color: identity.color }}>{identity.label} · {action.title ?? "Nova action"}</span>
+                        <span className="shrink-0 text-emerald-200/70">{status} · {progress} · {identity.pet}</span>
                       </div>
                       {action.lastLog ? (
                         <div className="mt-0.5 truncate text-emerald-100/55">{action.lastLog}</div>
@@ -8364,7 +8375,9 @@ export function RetroOffice3D({
               <span className="text-cyan-200/70">Actions</span>
               <span className="truncate text-right" title={officeActionSummary}>{officeActionSummary}</span>
               <span className="text-cyan-200/70">Event Agent</span>
-              <span className="truncate text-right">{novaEventAgentLabel}</span>
+              <span className="truncate text-right" style={{ color: novaEventLatest ? novaEventIdentity.color : undefined }}>{novaEventAgentLabel}</span>
+              <span className="text-cyan-200/70">Voice Source</span>
+              <span className="truncate text-right">{novaEventLatest ? `${novaEventIdentity.voiceProfile} · ${novaEventIdentity.livekitIdentity}` : "pending"}</span>
               <span className="text-cyan-200/70">Nova Event</span>
               <span className="truncate text-right" title={novaEventTitle}>{novaEventLabel}</span>
               <span className="text-cyan-200/70">Linked Route</span>

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { NextResponse } from "next/server";
+import { resolveNovaIdentity } from "@/lib/identity/novaIdentities";
 
 export const runtime = "nodejs";
 
@@ -27,6 +28,7 @@ export const parseEventLine = (line: string) => {
     const agent = typeof payload.agent === "string" && payload.agent.trim()
       ? payload.agent.trim().toLowerCase()
       : null;
+    const identity = resolveNovaIdentity(`${agent ?? ""} ${message}`);
     const requestedPet = typeof payload.requestedPet === "string" && payload.requestedPet.trim()
       ? payload.requestedPet.trim()
       : null;
@@ -36,7 +38,17 @@ export const parseEventLine = (line: string) => {
       time,
       pet: payload.pet === true,
       eventbus: payload.eventbus === true,
-      ...(agent ? { agent } : {}),
+      agent: agent ?? identity.id,
+      identity: {
+        id: identity.id,
+        label: identity.label,
+        pet: identity.pet,
+        voiceProfile: identity.voiceProfile,
+        color: identity.color,
+        livekitIdentity: identity.livekitIdentity,
+        claw3dAvatar: identity.claw3dAvatar,
+        aliases: identity.aliases,
+      },
       ...(requestedPet ? { requestedPet } : {}),
     };
   } catch {
