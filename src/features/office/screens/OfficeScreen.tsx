@@ -4177,11 +4177,22 @@ export function OfficeScreen({
       .includes(normalizedOpenClawConsoleSearch);
   }, [normalizedOpenClawConsoleSearch, openClawLiveStateText]);
   const openClawConsoleExportEvents = useMemo(() => {
-    if (filteredOpenClawLogEntries.length > 0 || openClawLogEntries.length === 0) {
-      return filteredOpenClawLogEntries;
+    if (filteredOpenClawLogEntries.length > 0 || openClawLogEntries.length > 0) {
+      return filteredOpenClawLogEntries.length > 0 ? filteredOpenClawLogEntries : openClawLogEntries;
     }
-    return openClawLogEntries;
-  }, [filteredOpenClawLogEntries, openClawLogEntries]);
+    return [
+      createOpenClawLogEntry({
+        eventName: "office.live_state.snapshot",
+        eventKind: "status",
+        summary: "Synthetic live-state snapshot exported because the event buffer is empty.",
+        messageText: openClawLiveStateText,
+        payload: {
+          source: "liveStateText",
+          agentCount: state.agents.length,
+        },
+      }),
+    ];
+  }, [filteredOpenClawLogEntries, openClawLiveStateText, openClawLogEntries, state.agents.length]);
   const openClawConsoleExportUsedFallback =
     openClawConsoleExportEvents !== filteredOpenClawLogEntries;
   const openClawConsoleExportJson = useMemo(

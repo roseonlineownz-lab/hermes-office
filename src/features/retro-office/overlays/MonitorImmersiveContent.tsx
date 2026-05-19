@@ -235,7 +235,6 @@ function MonitorBrowserContent({
               className="h-full w-full"
               onLoad={handleEmbedLoad}
               onError={() => {
-                setAllowAutoFallback(false);
                 setBrowserView("screenshot");
                 setEmbedLoaded(false);
               }}

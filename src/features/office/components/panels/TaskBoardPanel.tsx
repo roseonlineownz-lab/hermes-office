@@ -36,12 +36,44 @@ type OrchestratorResponse = {
   tasks: OrchestratorTask[];
 };
 
+type DuplicateReport = {
+  ok: boolean;
+  total_groups: number;
+  total_duplicate_tasks: number;
+};
+
+type BrowserToolsStatus = {
+  ok: boolean;
+  browser?: {
+    ok?: boolean;
+    cdpUrl?: string;
+    browser?: string | null;
+    error?: string;
+  };
+  tools?: {
+    computerUse?: boolean;
+    crawl4ai?: boolean;
+  };
+};
+
 const STATUS_ORDER: OrchestratorStatus[] = ["triage", "ready", "running", "blocked", "review", "done"];
 
 const fetchOrchestrator = async (): Promise<OrchestratorResponse> => {
   const response = await fetch("/api/office/orchestrator", { cache: "no-store" });
   if (!response.ok) throw new Error(`Orchestrator probe failed: ${response.status}`);
   return (await response.json()) as OrchestratorResponse;
+};
+
+const fetchDuplicateReport = async (): Promise<DuplicateReport> => {
+  const response = await fetch("/api/office/orchestrator?report=duplicates", { cache: "no-store" });
+  if (!response.ok) throw new Error(`Duplicate report failed: ${response.status}`);
+  return (await response.json()) as DuplicateReport;
+};
+
+const fetchBrowserTools = async (): Promise<BrowserToolsStatus> => {
+  const response = await fetch("/api/office/browser-tools", { cache: "no-store" });
+  if (!response.ok) throw new Error(`Browser tools probe failed: ${response.status}`);
+  return (await response.json()) as BrowserToolsStatus;
 };
 
 export function TaskBoardPanel({
@@ -76,6 +108,8 @@ export function TaskBoardPanel({
   onRefreshCronJobs: () => void;
 }) {
   const [orchestrator, setOrchestrator] = useState<OrchestratorResponse | null>(null);
+  const [duplicateReport, setDuplicateReport] = useState<DuplicateReport | null>(null);
+  const [browserTools, setBrowserTools] = useState<BrowserToolsStatus | null>(null);
   const [orchestratorError, setOrchestratorError] = useState<string | null>(null);
   const [orchestratorLoading, setOrchestratorLoading] = useState(false);
 
@@ -83,7 +117,14 @@ export function TaskBoardPanel({
     setOrchestratorLoading(true);
     setOrchestratorError(null);
     try {
-      setOrchestrator(await fetchOrchestrator());
+      const [nextOrchestrator, nextDuplicateReport, nextBrowserTools] = await Promise.all([
+        fetchOrchestrator(),
+        fetchDuplicateReport().catch(() => null),
+        fetchBrowserTools().catch(() => null),
+      ]);
+      setOrchestrator(nextOrchestrator);
+      setDuplicateReport(nextDuplicateReport);
+      setBrowserTools(nextBrowserTools);
     } catch (error) {
       setOrchestratorError(error instanceof Error ? error.message : "Failed to load orchestrator.");
     } finally {
@@ -135,6 +176,16 @@ export function TaskBoardPanel({
                 {status.replaceAll("_", " ")}: {orchestrator.summary.statuses[status] ?? 0}
               </span>
             ))}
+            {duplicateReport ? (
+              <span className="rounded border border-violet-400/20 bg-violet-500/10 px-2 py-1 text-violet-100/75">
+                dupes {duplicateReport.total_duplicate_tasks}/{duplicateReport.total_groups}
+              </span>
+            ) : null}
+            {browserTools ? (
+              <span className={`rounded border px-2 py-1 ${browserTools.browser?.ok ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-100/75" : "border-amber-400/20 bg-amber-500/10 text-amber-100/75"}`}>
+                browser {browserTools.browser?.ok ? "cdp" : "offline"} · cu {browserTools.tools?.computerUse ? "yes" : "no"} · crawl {browserTools.tools?.crawl4ai ? "yes" : "no"}
+              </span>
+            ) : null}
           </div>
         ) : null}
         {activeOrchestratorTasks.length > 0 ? (

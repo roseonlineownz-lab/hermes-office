@@ -199,6 +199,19 @@ export const useVoiceReplyPlayback = (params: {
         });
       const initialProvider = (request.provider ?? provider) as VoiceReplyProvider;
       const response = await runVoiceRequest(initialProvider);
+      if (!response.ok && initialProvider === "vibevoice") {
+        const fallbackResponse = await runVoiceRequest("kokoro");
+        if (fallbackResponse.ok) {
+          onProviderFallback?.("kokoro");
+          return fallbackResponse.blob();
+        }
+        const fallbackBody = (await fallbackResponse.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        const fallbackMessage =
+          typeof fallbackBody?.error === "string" ? fallbackBody.error.trim() : "Kokoro fallback failed.";
+        throw new Error(fallbackMessage);
+      }
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as
           | { error?: string }

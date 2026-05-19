@@ -85,6 +85,8 @@ export const AgentModel = memo(function AgentModel({
   const rightBrowRef = useRef<THREE.Mesh>(null);
   const heldPaddleRef = useRef<THREE.Group>(null);
   const heldPaddleFaceRef = useRef<THREE.MeshStandardMaterial>(null);
+  const heldWorkDeviceRef = useRef<THREE.Group>(null);
+  const heldWorkScreenRef = useRef<THREE.MeshBasicMaterial>(null);
   const heldCleaningToolRef = useRef<THREE.Group>(null);
   const heldCleaningHeadRef = useRef<THREE.MeshStandardMaterial>(null);
   const heldBucketRef = useRef<THREE.Group>(null);
@@ -120,6 +122,13 @@ export const AgentModel = memo(function AgentModel({
     const janitorTool = isJanitor
       ? (agent as RenderAgent & JanitorActor).janitorTool
       : undefined;
+    const isDeskWork =
+      !isJanitor &&
+      agent.status === "working" &&
+      (agent.state === "sitting" ||
+        agent.interactionTarget === "desk" ||
+        agent.interactionTarget === "server_room" ||
+        agent.interactionTarget === "qa_lab");
     const workoutStyle = agent.workoutStyle ?? "lift";
     const frameValue = agent.frame + (agent.phaseOffset ?? 0) / WALK_ANIM_SPEED;
     const walkPhase = Math.sin(frameValue * WALK_ANIM_SPEED);
@@ -224,6 +233,10 @@ export const AgentModel = memo(function AgentModel({
       } else if (agent.pingPongUntil) {
         leftArmRef.current.rotation.x =
           0.2 + Math.sin(agent.frame * 0.08) * 0.28;
+      } else if (isDeskWork) {
+        leftArmRef.current.rotation.x = 0.58 + Math.sin(agent.frame * 0.42) * 0.08;
+        leftArmRef.current.rotation.z = -0.16;
+        leftArmRef.current.rotation.y = -0.08;
       } else if (agent.state === "sitting") {
         leftArmRef.current.rotation.x = 0.3;
       }
@@ -283,6 +296,10 @@ export const AgentModel = memo(function AgentModel({
       } else if (agent.pingPongUntil) {
         rightArmRef.current.rotation.x =
           0.08 - Math.sin(agent.frame * 0.08) * 0.16;
+      } else if (isDeskWork) {
+        rightArmRef.current.rotation.x = 0.58 + Math.cos(agent.frame * 0.42) * 0.08;
+        rightArmRef.current.rotation.z = 0.16;
+        rightArmRef.current.rotation.y = 0.08;
       } else if (agent.state === "sitting") {
         rightArmRef.current.rotation.x = 0.3;
       }
@@ -529,6 +546,27 @@ export const AgentModel = memo(function AgentModel({
       );
     }
 
+    if (heldWorkDeviceRef.current) {
+      heldWorkDeviceRef.current.visible = isDeskWork;
+      if (isDeskWork) {
+        const tap = Math.sin(agent.frame * 0.36 + (agent.phaseOffset ?? 0));
+        heldWorkDeviceRef.current.position.set(0, 0.185 + tap * 0.004, 0.128);
+        heldWorkDeviceRef.current.rotation.set(-0.54, 0, 0);
+      }
+    }
+
+    if (heldWorkScreenRef.current) {
+      const pulse = (Math.sin(agent.frame * 0.12 + (agent.phaseOffset ?? 0)) + 1) / 2;
+      heldWorkScreenRef.current.color.set(
+        agent.interactionTarget === "server_room"
+          ? "#22d3ee"
+          : agent.interactionTarget === "qa_lab"
+            ? "#facc15"
+            : "#38bdf8",
+      );
+      heldWorkScreenRef.current.opacity = 0.62 + pulse * 0.28;
+    }
+
     if (heldCleaningToolRef.current) {
       const showBroom = isJanitor && janitorTool === "broom";
       heldCleaningToolRef.current.visible = showBroom;
@@ -699,6 +737,29 @@ export const AgentModel = memo(function AgentModel({
         <circleGeometry args={[0.12, 12]} />
         <meshBasicMaterial color="#000" transparent opacity={0.2} />
       </mesh>
+      <group
+        ref={heldWorkDeviceRef}
+        position={[0, 0.185, 0.128]}
+        rotation={[-0.54, 0, 0]}
+        visible={false}
+      >
+        <mesh position={[0, 0, 0]}>
+          <boxGeometry args={[0.19, 0.012, 0.13]} />
+          <meshStandardMaterial color="#0f172a" roughness={0.48} metalness={0.18} />
+        </mesh>
+        <mesh position={[0, 0.007, 0.002]}>
+          <boxGeometry args={[0.155, 0.006, 0.095]} />
+          <meshBasicMaterial ref={heldWorkScreenRef} color="#38bdf8" transparent opacity={0.8} />
+        </mesh>
+        <mesh position={[-0.047, 0.012, 0.018]}>
+          <boxGeometry args={[0.016, 0.004, 0.012]} />
+          <meshBasicMaterial color="#e0f2fe" transparent opacity={0.78} />
+        </mesh>
+        <mesh position={[0.006, 0.012, -0.012]}>
+          <boxGeometry args={[0.082, 0.004, 0.008]} />
+          <meshBasicMaterial color="#bae6fd" transparent opacity={0.58} />
+        </mesh>
+      </group>
       <group ref={rightLegRef} position={[-0.045, 0.1, 0]}>
         {bottomStyle === "shorts" ? (
           <>

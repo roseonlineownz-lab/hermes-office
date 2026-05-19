@@ -1,11 +1,8 @@
-import type { MockTextMessageScenario } from "@/lib/office/text/types";
-import type { OfficeTextMessageRequest } from "@/lib/office/eventTriggers";
-
-type TextMessageByAgentMap = Record<string, OfficeTextMessageRequest>;
+type TextMessageByAgentMap = Record<string, { key: string }>;
 
 type PreparedTextMessageState = {
   requestKey: string;
-  scenario: MockTextMessageScenario;
+  scenario: unknown;
 };
 
 export const buildTextMessageFingerprint = (
@@ -20,7 +17,7 @@ export const buildTextMessageFingerprint = (
 export const shouldSkipPreparedTextMessageUpdate = (
   current: PreparedTextMessageState | undefined,
   requestKey: string,
-  scenario: MockTextMessageScenario,
+  scenario: unknown,
 ): boolean => {
   if (!current) return false;
   if (current.requestKey !== requestKey) return false;

@@ -59,7 +59,7 @@ loadRuntimeEnv();
 const HERMES_API_URL = (process.env.HERMES_API_URL || "http://localhost:8643").replace(/\/$/, "");
 const HERMES_API_KEY = process.env.HERMES_API_KEY || "";
 const ADAPTER_PORT = parseInt(process.env.HERMES_ADAPTER_PORT || "18789", 10);
-const HERMES_MODEL = process.env.HERMES_MODEL || "grok-4.3";
+const HERMES_MODEL = process.env.HERMES_MODEL || "qwen3.5:cloud";
 const HERMES_AGENT_NAME = process.env.HERMES_AGENT_NAME || "Hermes";
 const SOUL_PATH = process.env.CLAW3D_SOUL_PATH || path.join(process.env.HOME || "/home/faramix", "work", "NovaMaster", ".hermes", "SOUL.md");
 function loadSoulContext() {
@@ -616,12 +616,29 @@ function sanitizeErrorMessage(error) {
 }
 
 function extractOpenAiStyleError(payload, fallbackMessage) {
+  if (typeof payload === "string" && payload.trim()) return payload.trim();
   if (payload && typeof payload === "object") {
-    const message =
-      typeof payload?.error?.message === "string"
-        ? payload.error.message.trim()
-        : "";
-    if (message) return message;
+    const candidates = [
+      payload?.error?.message,
+      payload?.message,
+      payload?.detail?.message,
+      payload?.detail?.error,
+      payload?.detail?.code,
+      payload?.raw,
+    ];
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+    }
+    if (payload.detail && typeof payload.detail === "object") {
+      try {
+        const detailText = JSON.stringify(payload.detail);
+        if (detailText && detailText !== "{}") return detailText;
+      } catch { /* ignore */ }
+    }
+    try {
+      const payloadText = JSON.stringify(payload);
+      if (payloadText && payloadText !== "{}") return payloadText;
+    } catch { /* ignore */ }
   }
   return fallbackMessage;
 }

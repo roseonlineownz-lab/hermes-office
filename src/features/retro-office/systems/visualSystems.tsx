@@ -117,7 +117,37 @@ export function HeatmapSystem({
   );
 }
 
-type TrailPoint = { pos: THREE.Vector3; age: number; color: string };
+type TrailPoint = { agentId: string; pos: THREE.Vector3; age: number; color: string };
+type TrailSegment = { key: string; from: THREE.Vector3; to: THREE.Vector3; age: number; color: string };
+
+function TrailLine({ segment }: { segment: TrailSegment }) {
+  const dx = segment.to.x - segment.from.x;
+  const dz = segment.to.z - segment.from.z;
+  const distance = Math.max(0.001, Math.hypot(dx, dz));
+  const angle = Math.atan2(dz, dx);
+
+  return (
+    <mesh
+      position={[
+        (segment.from.x + segment.to.x) / 2,
+        0.014,
+        (segment.from.z + segment.to.z) / 2,
+      ]}
+      rotation={[-Math.PI / 2, 0, -angle]}
+      renderOrder={99960}
+    >
+      <planeGeometry args={[distance, 0.028]} />
+      <meshBasicMaterial
+        color={segment.color}
+        transparent
+        opacity={Math.max(0, (1 - segment.age / 48) * 0.62)}
+        depthWrite={false}
+        depthTest={false}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  );
+}
 
 export function TrailSystem({
   agentsRef,
@@ -141,11 +171,12 @@ export function TrailSystem({
         const [wx, , wz] = toWorld(agent.x, agent.y);
         const existing = trails.get(agent.id) ?? [];
         existing.unshift({
-          pos: new THREE.Vector3(wx, 0.01, wz),
+          agentId: agent.id,
+          pos: new THREE.Vector3(wx, 0.018, wz),
           age: 0,
           color: colorMap.get(agent.id) ?? "#888",
         });
-        if (existing.length > 6) existing.splice(6);
+        if (existing.length > 4) existing.splice(4);
         trails.set(agent.id, existing);
       }
     }
@@ -173,8 +204,37 @@ export function TrailSystem({
     }
   });
 
+  const segments = useMemo(() => {
+    const byAgent = new Map<string, TrailPoint[]>();
+    for (const point of points) {
+      const existing = byAgent.get(point.agentId) ?? [];
+      existing.push(point);
+      byAgent.set(point.agentId, existing);
+    }
+
+    const nextSegments: TrailSegment[] = [];
+    for (const [agentId, trailPoints] of byAgent) {
+      const ordered = [...trailPoints].sort((left, right) => left.age - right.age);
+      for (let index = 0; index < ordered.length - 1; index += 1) {
+        const from = ordered[index];
+        const to = ordered[index + 1];
+        nextSegments.push({
+          key: `${agentId}-${index}-${from.age}-${to.age}`,
+          from: from.pos,
+          to: to.pos,
+          age: Math.max(from.age, to.age),
+          color: from.color,
+        });
+      }
+    }
+    return nextSegments;
+  }, [points]);
+
   return (
     <>
+      {segments.map((segment) => (
+        <TrailLine key={segment.key} segment={segment} />
+      ))}
       {points.map((point, index) => (
         <mesh
           key={index}

@@ -1156,6 +1156,23 @@ function useAgentTick(
         } as RenderAgent);
         return;
       }
+      const agentSignal = `${agent.id} ${agent.name} ${"subtitle" in agent ? (agent.subtitle ?? "") : ""}`.toLowerCase();
+      const inferredQaHold =
+        agentSignal.includes("code") ||
+        agentSignal.includes("coder") ||
+        agentSignal.includes("qa") ||
+        agentSignal.includes("review");
+      const inferredGithubHold =
+        agentSignal.includes("monitor") ||
+        agentSignal.includes("ops") ||
+        agentSignal.includes("server") ||
+        agentSignal.includes("github");
+      const inferredSmsBoothHold =
+        agentSignal.includes("lead") || agentSignal.includes("outreach");
+      const inferredPhoneBoothHold =
+        agentSignal.includes("publish") ||
+        agentSignal.includes("viral") ||
+        agentSignal.includes("media");
       const assignedDeskIndex = assignedDeskIndexByAgentId[agent.id];
       if (
         typeof assignedDeskIndex === "number" &&
@@ -1182,10 +1199,13 @@ function useAgentTick(
       }
       const explicitDeskHold = Boolean(deskHoldByAgentId[agent.id]);
       const explicitGymHold = Boolean(gymHoldByAgentId[agent.id]);
-      const explicitSmsBoothHold = Boolean(smsBoothHoldByAgentId[agent.id]);
-      const explicitPhoneBoothHold = Boolean(phoneBoothHoldByAgentId[agent.id]);
-      const explicitQaHold = Boolean(qaHoldByAgentId[agent.id]);
-      const explicitGithubHold = Boolean(githubReviewByAgentId[agent.id]);
+      const explicitSmsBoothHold =
+        Boolean(smsBoothHoldByAgentId[agent.id]) || inferredSmsBoothHold;
+      const explicitPhoneBoothHold =
+        Boolean(phoneBoothHoldByAgentId[agent.id]) || inferredPhoneBoothHold;
+      const explicitQaHold = Boolean(qaHoldByAgentId[agent.id]) || inferredQaHold;
+      const explicitGithubHold =
+        Boolean(githubReviewByAgentId[agent.id]) || inferredGithubHold;
       if (
         explicitGymHold &&
         gymWorkoutLocations.length > 0 &&
@@ -1244,11 +1264,13 @@ function useAgentTick(
       if (agent.status === "working" && !explicitDeskHold && deskPos)
         stickyUntilRef.current.set(agent.id, now + DESK_STICKY_MS);
       const stickyUntil = stickyUntilRef.current.get(agent.id) ?? 0;
+      const ambientDeskWork = Boolean(deskPos) && !explicitGymHold;
       const effectiveStatus: OfficeAgent["status"] =
         agent.status === "error"
           ? "error"
           : explicitMeetingHold ||
               explicitDeskHold ||
+              ambientDeskWork ||
               explicitGymHold ||
               explicitSmsBoothHold ||
               explicitPhoneBoothHold ||
@@ -2638,6 +2660,7 @@ export function RetroOffice3D({
   onRemoteOfficePresenceUrlChange?: (url: string) => void;
   onRemoteOfficeGatewayUrlChange?: (url: string) => void;
   onRemoteOfficeTokenChange?: (token: string) => void;
+  onVoiceRepliesProviderChange?: (provider: VoiceReplyProvider) => void;
   onVoiceRepliesToggle?: (enabled: boolean) => void;
   onVoiceRepliesVoiceChange?: (voiceId: string | null) => void;
   onVoiceRepliesSpeedChange?: (speed: number) => void;
@@ -3039,13 +3062,30 @@ export function RetroOffice3D({
   const deskLocations = useMemo(() => getDeskLocations(furniture), [furniture]);
   const assignedDeskIndexByAgentId = useMemo(() => {
     const next: Record<string, number> = {};
+    const usedDeskIndexes = new Set<number>();
     deskItems.forEach((item, index) => {
       const agentId = deskAssignmentByDeskUid[item._uid];
       if (!agentId) return;
       next[agentId] = index;
+      usedDeskIndexes.add(index);
     });
+
+    let fallbackDeskIndex = 0;
+    for (const agent of agents) {
+      if (next[agent.id] !== undefined) continue;
+      while (
+        usedDeskIndexes.has(fallbackDeskIndex) &&
+        fallbackDeskIndex < deskItems.length
+      ) {
+        fallbackDeskIndex += 1;
+      }
+      if (fallbackDeskIndex >= deskItems.length) break;
+      next[agent.id] = fallbackDeskIndex;
+      usedDeskIndexes.add(fallbackDeskIndex);
+      fallbackDeskIndex += 1;
+    }
     return next;
-  }, [deskAssignmentByDeskUid, deskItems]);
+  }, [agents, deskAssignmentByDeskUid, deskItems]);
   const janitorCleaningStops = useMemo(
     () => getJanitorCleaningStops(furniture),
     [furniture],
@@ -6662,54 +6702,89 @@ export function RetroOffice3D({
             hoveredAgentStatus?.isError ?? hoveredAgent.status === "error";
           const working =
             hoveredAgentStatus?.working ?? hoveredAgent.status === "working";
+          const renderSnapshot = renderAgentUiById[hoveredAgent.id];
+          const monitor = monitorByAgentId[hoveredAgent.id] ?? null;
+          const runCount = runCountByAgentId[hoveredAgent.id] ?? 0;
+          const lastSeen = lastSeenByAgentId[hoveredAgent.id] ?? 0;
+          const lastSeenLabel = lastSeen > 0
+            ? (() => {
+                const mins = Math.round((Date.now() - lastSeen) / 60_000);
+                return mins <= 0 ? "live now" : `last active ${mins}m ago`;
+              })()
+            : "no recent pulse";
           return (
-            <div className="absolute top-24 left-1/2 -translate-x-1/2 z-30 pointer-events-none select-none">
-              <div className="flex items-center gap-3 bg-[#120e08]/95 backdrop-blur-sm border border-amber-800/30 rounded-lg px-4 py-2.5 shadow-xl">
-                <div className="relative shrink-0">
+            <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none select-none">
+              <div className="w-[360px] overflow-hidden rounded-xl border border-cyan-400/20 bg-[#070b12]/95 shadow-2xl shadow-cyan-950/40 backdrop-blur-md">
+                <div className="flex items-center gap-3 border-b border-white/10 bg-cyan-500/5 px-4 py-3">
+                  <div className="relative shrink-0">
+                    <div
+                      className="h-9 w-9 rounded-lg border border-white/15 shadow-inner"
+                      style={{ backgroundColor: hoveredAgent.color }}
+                    />
+                    <div
+                      className={`absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border border-[#070b12] ${
+                        isError
+                          ? "bg-red-400"
+                          : working
+                            ? "bg-green-400"
+                            : "bg-yellow-400"
+                      }`}
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-bold text-cyan-50">
+                      {hoveredAgent.name}
+                    </div>
+                    <div className="truncate text-[10px] uppercase tracking-[0.18em] text-cyan-200/55">
+                      dossier · {hoveredAgent.item}
+                    </div>
+                  </div>
                   <div
-                    className="w-6 h-6 rounded-sm"
-                    style={{ backgroundColor: hoveredAgent.color }}
-                  />
-                  <div
-                    className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-[#120e08] ${
+                    className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${
                       isError
-                        ? "bg-red-400"
+                        ? "bg-red-900/40 text-red-300 ring-1 ring-red-800/40"
                         : working
-                          ? "bg-green-400"
-                          : "bg-yellow-400"
+                          ? "bg-green-900/40 text-green-300 ring-1 ring-green-800/40"
+                          : "bg-yellow-900/30 text-yellow-300 ring-1 ring-yellow-800/30"
                     }`}
-                  />
+                  >
+                    {isError ? "error" : working ? "working" : "idle"}
+                  </div>
                 </div>
-                <div>
-                  <div className="text-xs font-bold text-amber-100">
-                    {hoveredAgent.name}
+                <div className="grid grid-cols-3 gap-px bg-white/10 text-center font-mono text-[10px] uppercase tracking-[0.12em] text-white/65">
+                  <div className="bg-[#070b12] px-2 py-2">
+                    <div className="text-cyan-200">state</div>
+                    <div className="mt-1 truncate text-white/80">{renderSnapshot?.state ?? "unknown"}</div>
                   </div>
-                  <div className="text-[10px] text-amber-600 uppercase tracking-widest">
-                    {hoveredAgent.item}
+                  <div className="bg-[#070b12] px-2 py-2">
+                    <div className="text-cyan-200">runs</div>
+                    <div className="mt-1 text-white/80">{runCount}</div>
                   </div>
-                  {/* New Idea 8: last seen timestamp. */}
-                  {(() => {
-                    const ts = lastSeenByAgentId[hoveredAgent.id];
-                    if (!ts || ts <= 0) return null;
-                    const mins = Math.round((Date.now() - ts) / 60_000);
-                    if (mins <= 0) return null;
-                    return (
-                      <div className="text-[9px] text-amber-700/70">
-                        last active {mins}m ago
+                  <div className="bg-[#070b12] px-2 py-2">
+                    <div className="text-cyan-200">monitor</div>
+                    <div className="mt-1 text-white/80">{monitor?.live ? "live" : monitor ? monitor.mode : "none"}</div>
+                  </div>
+                </div>
+                <div className="space-y-2 px-4 py-3 text-[11px] text-slate-200/80">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-400">pulse</span>
+                    <span className="truncate text-cyan-100/80">{lastSeenLabel}</span>
+                  </div>
+                  {monitor ? (
+                    <>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-400">mission</span>
+                        <span className="truncate text-right text-cyan-100/80">{monitor.title}</span>
                       </div>
-                    );
-                  })()}
-                </div>
-                <div
-                  className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ml-1 ${
-                    isError
-                      ? "bg-red-900/40 text-red-400 ring-1 ring-red-800/40"
-                      : working
-                        ? "bg-green-900/40 text-green-400 ring-1 ring-green-800/40"
-                        : "bg-yellow-900/30 text-yellow-500 ring-1 ring-yellow-800/30"
-                  }`}
-                >
-                  {isError ? "error" : working ? "working" : "idle"}
+                      <div className="line-clamp-2 rounded-md border border-cyan-400/10 bg-cyan-400/5 px-2 py-1.5 text-[10px] text-cyan-50/75">
+                        {monitor.subtitle}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="rounded-md border border-amber-400/10 bg-amber-400/5 px-2 py-1.5 text-[10px] text-amber-100/70">
+                      No live desk monitor yet — click agent or assign a task to start a dossier feed.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
