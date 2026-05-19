@@ -7331,7 +7331,6 @@ export function RetroOffice3D({
                 onVoiceRepliesPreview={(voiceId, voiceName) =>
                   onVoiceRepliesPreview?.(voiceId, voiceName)
                 }
-                voiceRepliesProvider={voiceRepliesProvider}
               />
             </div>
           </div>

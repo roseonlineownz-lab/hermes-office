@@ -358,12 +358,36 @@ function sanitizeErrorMessage(error) {
 }
 
 function extractOpenAiStyleError(payload, fallbackMessage) {
+  if (typeof payload === "string") {
+    const message = payload.trim();
+    return message || fallbackMessage;
+  }
   if (payload && typeof payload === "object") {
+    const detail = payload.detail;
     const message =
       typeof payload?.error?.message === "string"
         ? payload.error.message.trim()
-        : "";
+        : typeof payload?.message === "string"
+          ? payload.message.trim()
+          : typeof detail === "string"
+            ? detail.trim()
+            : detail && typeof detail === "object" && typeof detail.message === "string"
+              ? detail.message.trim()
+              : detail && typeof detail === "object" && typeof detail.error === "string"
+                ? detail.error.trim()
+                : detail && typeof detail === "object" && typeof detail.code === "string"
+                  ? detail.code.trim()
+                  : typeof payload?.raw === "string"
+                    ? payload.raw.trim()
+                    : "";
     if (message) return message;
+    if (detail && typeof detail === "object") {
+      try {
+        return JSON.stringify(detail);
+      } catch {
+        return fallbackMessage;
+      }
+    }
   }
   return fallbackMessage;
 }
@@ -482,8 +506,26 @@ async function streamOneTurn(messages, model, tools, onTextDelta, abortCheck) {
   body.model = resolvedModel;
   const res = await hermesPost("/v1/chat/completions", body);
   if (res.statusCode >= 400) {
-    res.resume();
-    throw new Error(`Hermes API HTTP ${res.statusCode}`);
+    const payload = await readJsonBody(res);
+    const errorText = extractOpenAiStyleError(payload, `Hermes API HTTP ${res.statusCode}`);
+    const lowerError = errorText.toLowerCase();
+    if (
+      res.statusCode === 400 &&
+      (lowerError.includes("stream_not_supported") ||
+        lowerError.includes("stream") ||
+        lowerError.includes("unsupported"))
+    ) {
+      const fallback = await completeOneTurn(messages, resolvedModel, tools);
+      if (fallback.textContent && onTextDelta) {
+        onTextDelta(fallback.textContent);
+      }
+      return {
+        textContent: fallback.textContent,
+        toolCalls: fallback.toolCalls,
+        finishReason: fallback.finishReason,
+      };
+    }
+    throw new Error(errorText);
   }
 
   let textContent = "";

@@ -5240,9 +5240,17 @@ export function OfficeScreen({
                   canSend={remoteMessagingAvailable}
                   sending={focusedRemoteChatState.sending}
                   draft={focusedRemoteChatState.draft}
+                  mode="direct"
+                  handoffContext=""
+                  handoffDeliverables=""
+                  handoffAcceptance=""
                   error={focusedRemoteChatState.error}
                   messages={focusedRemoteChatState.messages}
                   disabledReason={remoteMessagingDisabledReason}
+                  onModeChange={() => undefined}
+                  onHandoffContextChange={() => undefined}
+                  onHandoffDeliverablesChange={() => undefined}
+                  onHandoffAcceptanceChange={() => undefined}
                   onDraftChange={(value) => {
                     updateRemoteChatSession(focusedRemoteChatTarget.id, (session) => ({
                       ...session,
@@ -5251,6 +5259,9 @@ export function OfficeScreen({
                     }));
                   }}
                   onSend={(message) => {
+                    void handleChatSend(focusedRemoteChatTarget.id, "", message);
+                  }}
+                  onHandoff={(message) => {
                     void handleChatSend(focusedRemoteChatTarget.id, "", message);
                   }}
                 />
