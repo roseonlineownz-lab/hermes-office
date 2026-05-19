@@ -2745,21 +2745,117 @@ export function RetroOffice3D({
       ),
     [taskBoardCardsByStatus],
   );
+  const [officeActionStatus, setOfficeActionStatus] = useState<{
+    ok?: boolean;
+    active?: Array<{ id?: string; agent?: string; title?: string; status?: string; progress?: number | null; lastLog?: string | null }>;
+    recent?: Array<{ id?: string; agent?: string; title?: string; status?: string; progress?: number | null; lastLog?: string | null }>;
+    latest?: { id?: string; agent?: string; title?: string; status?: string; progress?: number | null; lastLog?: string | null } | null;
+  } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const refreshOfficeActions = async () => {
+      try {
+        const response = await fetch("/api/office/actions", { cache: "no-store" });
+        const payload = (await response.json()) as typeof officeActionStatus;
+        if (!cancelled) setOfficeActionStatus(payload);
+      } catch {
+        if (!cancelled) setOfficeActionStatus({ ok: false, active: [], recent: [], latest: null });
+      }
+    };
+    void refreshOfficeActions();
+    const timer = window.setInterval(refreshOfficeActions, 8_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+  const visibleOfficeActions = (officeActionStatus?.active?.length ?? 0) > 0
+    ? (officeActionStatus?.active ?? [])
+    : (officeActionStatus?.recent ?? []).slice(0, 3);
+  const officeActionSummary = (officeActionStatus?.active?.length ?? 0) > 0
+    ? `${officeActionStatus?.active?.length ?? 0} running`
+    : officeActionStatus?.latest
+      ? `${officeActionStatus.latest.status ?? "done"}: ${officeActionStatus.latest.title ?? "Nova action"}`
+      : officeActionStatus?.ok === false
+        ? "action log offline"
+        : "waiting for nova-run";
+  const actionByAgentId = useMemo(() => {
+    const runningOrRecent = [
+      ...(officeActionStatus?.active ?? []),
+      ...(officeActionStatus?.recent ?? []),
+    ];
+    const next: Record<string, (typeof runningOrRecent)[number]> = {};
+    for (const action of runningOrRecent) {
+      const rawAgent = (action.agent ?? "").toLowerCase();
+      const matchedAgent = agents.find((agent) => {
+        const id = agent.id.toLowerCase();
+        const name = agent.name.toLowerCase();
+        return rawAgent === id || rawAgent === name || id.includes(rawAgent) || name.includes(rawAgent) || rawAgent.includes(id);
+      });
+      if (matchedAgent && !next[matchedAgent.id]) next[matchedAgent.id] = action;
+    }
+    return next;
+  }, [agents, officeActionStatus?.active, officeActionStatus?.recent]);
+  const actionBubbleTextByAgentId = useMemo(() => {
+    const next: Record<string, string> = {};
+    for (const [agentId, action] of Object.entries(actionByAgentId)) {
+      const status = action.status ?? "running";
+      const progress = typeof action.progress === "number" ? ` · ${action.progress}%` : "";
+      const icon = status === "success" ? "✅" : status === "error" ? "⚠" : status === "waiting" ? "⏳" : "⚙";
+      next[agentId] = `${icon} ${action.title ?? "Nova action"}${progress}`;
+    }
+    return next;
+  }, [actionByAgentId]);
+  const actionQaHoldByAgentId = useMemo(() => {
+    const next: Record<string, boolean> = {};
+    for (const [agentId, action] of Object.entries(actionByAgentId)) {
+      const text = `${action.agent ?? ""} ${action.title ?? ""}`.toLowerCase();
+      if (/qa|test|typecheck|smoke|verify|review/.test(text) && action.status !== "success") next[agentId] = true;
+    }
+    return next;
+  }, [actionByAgentId]);
+  const actionSmsBoothHoldByAgentId = useMemo(() => {
+    const next: Record<string, boolean> = {};
+    for (const [agentId, action] of Object.entries(actionByAgentId)) {
+      const text = `${action.agent ?? ""} ${action.title ?? ""}`.toLowerCase();
+      if (/lead|sales|outreach|sms|whatsapp|mail/.test(text) && action.status !== "success") next[agentId] = true;
+    }
+    return next;
+  }, [actionByAgentId]);
+  const actionGithubHoldByAgentId = useMemo(() => {
+    const next: Record<string, boolean> = {};
+    for (const [agentId, action] of Object.entries(actionByAgentId)) {
+      const text = `${action.agent ?? ""} ${action.title ?? ""}`.toLowerCase();
+      if (/hermes|core|github|commit|push|router|bridge|server|freebuff|windows/.test(text) && action.status !== "success") next[agentId] = true;
+    }
+    return next;
+  }, [actionByAgentId]);
   const resolvedDeskHoldByAgentId =
     animationState?.deskHoldByAgentId ?? deskHoldByAgentId;
   const resolvedGymHoldByAgentId =
     animationState?.gymHoldByAgentId ?? gymHoldByAgentId;
-  const resolvedSmsBoothHoldByAgentId =
+  const baseSmsBoothHoldByAgentId =
     animationState?.smsBoothHoldByAgentId ?? EMPTY_BOOLEAN_RECORD;
+  const resolvedSmsBoothHoldByAgentId = useMemo(
+    () => ({ ...baseSmsBoothHoldByAgentId, ...actionSmsBoothHoldByAgentId }),
+    [baseSmsBoothHoldByAgentId, actionSmsBoothHoldByAgentId],
+  );
   const resolvedPhoneBoothHoldByAgentId =
     animationState?.phoneBoothHoldByAgentId ?? EMPTY_BOOLEAN_RECORD;
-  const resolvedQaHoldByAgentId =
-    animationState?.qaHoldByAgentId ?? qaHoldByAgentId;
-  const resolvedGithubReviewByAgentId =
+  const baseQaHoldByAgentId = animationState?.qaHoldByAgentId ?? qaHoldByAgentId;
+  const resolvedQaHoldByAgentId = useMemo(
+    () => ({ ...baseQaHoldByAgentId, ...actionQaHoldByAgentId }),
+    [baseQaHoldByAgentId, actionQaHoldByAgentId],
+  );
+  const baseGithubReviewByAgentId =
     animationState?.githubHoldByAgentId ??
     (githubReviewAgentId
       ? { [githubReviewAgentId]: true }
       : EMPTY_BOOLEAN_RECORD);
+  const resolvedGithubReviewByAgentId = useMemo(
+    () => ({ ...baseGithubReviewByAgentId, ...actionGithubHoldByAgentId }),
+    [baseGithubReviewByAgentId, actionGithubHoldByAgentId],
+  );
   const resolvedJukeboxHoldByAgentId =
     animationState?.jukeboxHoldByAgentId ?? EMPTY_BOOLEAN_RECORD;
   const isJukeboxActive = Object.values(resolvedJukeboxHoldByAgentId).some(
@@ -5649,40 +5745,6 @@ export function RetroOffice3D({
       ? "skill live · suno ready"
       : "skill live · suno off"
     : "skill missing";
-  const [officeActionStatus, setOfficeActionStatus] = useState<{
-    ok?: boolean;
-    active?: Array<{ id?: string; agent?: string; title?: string; status?: string; progress?: number | null; lastLog?: string | null }>;
-    recent?: Array<{ id?: string; agent?: string; title?: string; status?: string; progress?: number | null; lastLog?: string | null }>;
-    latest?: { id?: string; agent?: string; title?: string; status?: string; progress?: number | null; lastLog?: string | null } | null;
-  } | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    const refreshOfficeActions = async () => {
-      try {
-        const response = await fetch("/api/office/actions", { cache: "no-store" });
-        const payload = (await response.json()) as typeof officeActionStatus;
-        if (!cancelled) setOfficeActionStatus(payload);
-      } catch {
-        if (!cancelled) setOfficeActionStatus({ ok: false, active: [], recent: [], latest: null });
-      }
-    };
-    void refreshOfficeActions();
-    const timer = window.setInterval(refreshOfficeActions, 8_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, []);
-  const visibleOfficeActions = (officeActionStatus?.active?.length ?? 0) > 0
-    ? (officeActionStatus?.active ?? [])
-    : (officeActionStatus?.recent ?? []).slice(0, 3);
-  const officeActionSummary = (officeActionStatus?.active?.length ?? 0) > 0
-    ? `${officeActionStatus?.active?.length ?? 0} running`
-    : officeActionStatus?.latest
-      ? `${officeActionStatus.latest.status ?? "done"}: ${officeActionStatus.latest.title ?? "Nova action"}`
-      : officeActionStatus?.ok === false
-        ? "action log offline"
-        : "waiting for nova-run";
   const [novaEventStatus, setNovaEventStatus] = useState<{
     ok?: boolean;
     latest?: {
@@ -6423,7 +6485,8 @@ export function RetroOffice3D({
                       ? false
                       : standupMeeting?.phase === "in_progress"
                         ? Boolean(standupSpeechTextByAgentId[agent.id])
-                        : speechAgentIds.has(agent.id) ||
+                        : Boolean(actionBubbleTextByAgentId[agent.id]) ||
+                          speechAgentIds.has(agent.id) ||
                           Boolean(streamingTextByAgentId[agent.id])
                   }
                   speechText={
@@ -6431,7 +6494,8 @@ export function RetroOffice3D({
                       ? null
                       : standupMeeting?.phase === "in_progress"
                         ? (standupSpeechTextByAgentId[agent.id] ?? null)
-                        : (speechTextByAgentId[agent.id] ??
+                        : (actionBubbleTextByAgentId[agent.id] ??
+                            speechTextByAgentId[agent.id] ??
                             streamingTextByAgentId[agent.id] ??
                             null)
                   }
