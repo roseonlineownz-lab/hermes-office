@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CURATED_ELEVENLABS_VOICES } from "@/lib/voiceReply/catalog";
 import type { StudioGatewayAdapterType } from "@/lib/studio/settings";
+import type { VoiceReplyProvider } from "@/lib/voiceReply/provider";
 
 type SettingsPanelProps = {
   gatewayStatus?: string;
@@ -34,6 +35,7 @@ type SettingsPanelProps = {
   voiceRepliesEnabled: boolean;
   voiceRepliesVoiceId: string | null;
   voiceRepliesSpeed: number;
+  voiceRepliesProvider?: VoiceReplyProvider;
   voiceRepliesLoaded: boolean;
   onVoiceRepliesToggle: (enabled: boolean) => void;
   onVoiceRepliesVoiceChange: (voiceId: string | null) => void;
