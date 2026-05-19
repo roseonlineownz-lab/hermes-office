@@ -1,6 +1,8 @@
 "use client";
 
-import { memo, type ReactNode } from "react";
+import { useFrame } from "@react-three/fiber";
+import { memo, useMemo, useRef, type ReactNode } from "react";
+import * as THREE from "three";
 import {
   CANVAS_H,
   CANVAS_W,
@@ -19,6 +21,8 @@ import {
   REMOTE_OFFICE_ZONE,
 } from "@/features/retro-office/core/district";
 import { toWorld } from "@/features/retro-office/core/geometry";
+
+type WowFxMode = "aurora" | "neon" | "midnight";
 
 function FramedPicture({
   position,
@@ -167,10 +171,162 @@ function OfficeFlagPole({
   );
 }
 
+function StylizedWeedPlant({
+  position,
+  scale = 1,
+}: {
+  position: [number, number, number];
+  scale?: number;
+}) {
+  const leafMaterial = (
+    <meshStandardMaterial
+      color="#59d162"
+      emissive="#2fa84a"
+      emissiveIntensity={0.18}
+      roughness={0.74}
+      metalness={0.04}
+    />
+  );
+  return (
+    <group position={position} scale={[scale, scale, scale]}>
+      <mesh position={[0, 0.12, 0]} castShadow>
+        <cylinderGeometry args={[0.01, 0.012, 0.24, 10]} />
+        <meshStandardMaterial color="#3f8c35" roughness={0.78} metalness={0.02} />
+      </mesh>
+      <mesh position={[0.07, 0.14, 0]} rotation={[0.12, 0, Math.PI / 5]}>
+        <planeGeometry args={[0.14, 0.04]} />
+        {leafMaterial}
+      </mesh>
+      <mesh position={[-0.07, 0.14, 0]} rotation={[0.12, 0, -Math.PI / 5]}>
+        <planeGeometry args={[0.14, 0.04]} />
+        {leafMaterial}
+      </mesh>
+      <mesh position={[0, 0.17, 0.07]} rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[0.12, 0.034]} />
+        {leafMaterial}
+      </mesh>
+      <mesh position={[0, 0.17, -0.07]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[0.12, 0.034]} />
+        {leafMaterial}
+      </mesh>
+      <mesh position={[0, 0.2, 0]} rotation={[0, 0, Math.PI / 2]}>
+        <planeGeometry args={[0.1, 0.03]} />
+        {leafMaterial}
+      </mesh>
+    </group>
+  );
+}
+
+function AnimatedLightLines({
+  centerX,
+  centerZ,
+  officeWidth,
+  officeHeight,
+  primaryColor,
+  secondaryColor,
+  intensityBoost = 1,
+}: {
+  centerX: number;
+  centerZ: number;
+  officeWidth: number;
+  officeHeight: number;
+  primaryColor: string;
+  secondaryColor: string;
+  intensityBoost?: number;
+}) {
+  const lineARef = useRef<THREE.Mesh>(null);
+  const lineBRef = useRef<THREE.Mesh>(null);
+  const lineCRef = useRef<THREE.Mesh>(null);
+
+  useFrame(({ clock }) => {
+    const time = clock.getElapsedTime();
+    const halfWidth = officeWidth * 0.45;
+    const halfHeight = officeHeight * 0.45;
+
+    if (lineARef.current) {
+      lineARef.current.position.x = centerX + Math.sin(time * 0.55) * halfWidth;
+      const material = lineARef.current.material as THREE.MeshStandardMaterial;
+      material.emissiveIntensity = (0.78 + Math.sin(time * 2.4) * 0.2) * intensityBoost;
+    }
+    if (lineBRef.current) {
+      lineBRef.current.position.z = centerZ + Math.cos(time * 0.48) * halfHeight;
+      const material = lineBRef.current.material as THREE.MeshStandardMaterial;
+      material.emissiveIntensity = (0.58 + Math.cos(time * 1.8) * 0.16) * intensityBoost;
+    }
+    if (lineCRef.current) {
+      lineCRef.current.position.x = centerX + Math.cos(time * 0.33) * (halfWidth * 0.75);
+      lineCRef.current.position.z = centerZ + Math.sin(time * 0.4) * (halfHeight * 0.75);
+      const material = lineCRef.current.material as THREE.MeshStandardMaterial;
+      material.emissiveIntensity = (0.44 + Math.sin(time * 2) * 0.14) * intensityBoost;
+    }
+  });
+
+  return (
+    <>
+      <mesh
+        ref={lineARef}
+        position={[centerX, 0.008, centerZ]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        castShadow={false}
+      >
+        <planeGeometry args={[officeWidth * 0.34, 0.016]} />
+        <meshStandardMaterial
+          color={primaryColor}
+          emissive={primaryColor}
+          emissiveIntensity={0.78}
+          roughness={0.18}
+          metalness={0.5}
+          transparent
+          opacity={0.82}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <mesh
+        ref={lineBRef}
+        position={[centerX, 0.008, centerZ]}
+        rotation={[-Math.PI / 2, Math.PI / 2, 0]}
+        castShadow={false}
+      >
+        <planeGeometry args={[officeHeight * 0.26, 0.012]} />
+        <meshStandardMaterial
+          color={secondaryColor}
+          emissive={secondaryColor}
+          emissiveIntensity={0.58}
+          roughness={0.2}
+          metalness={0.44}
+          transparent
+          opacity={0.7}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <mesh
+        ref={lineCRef}
+        position={[centerX, 0.008, centerZ]}
+        rotation={[-Math.PI / 2, Math.PI * 0.25, 0]}
+        castShadow={false}
+      >
+        <planeGeometry args={[officeWidth * 0.22, 0.01]} />
+        <meshStandardMaterial
+          color={secondaryColor}
+          emissive={secondaryColor}
+          emissiveIntensity={0.44}
+          roughness={0.2}
+          metalness={0.4}
+          transparent
+          opacity={0.56}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </>
+  );
+}
+
 export const FloorAndWalls = memo(function FloorAndWalls({
   showRemoteOffice = true,
+  wowFxMode = "aurora",
 }: {
   showRemoteOffice?: boolean;
+  wowFxMode?: WowFxMode;
 }) {
   const districtWidth = CANVAS_W * SCALE;
   const districtHeight = CANVAS_H * SCALE;
@@ -207,6 +363,28 @@ export const FloorAndWalls = memo(function FloorAndWalls({
   const qaZoneStripeHeight = roomZoneFloorHeight * 0.86;
   const qaZoneStripeWidth = qaZoneFloorWidth * 0.92;
   const remoteOfficeOffsetZ = remoteOfficeCenterZ - localOfficeCenterZ;
+  const wowPalette = useMemo(() => {
+    if (wowFxMode === "neon") {
+      return {
+        stripA: "#ff4fd8",
+        stripB: "#8a7dff",
+        stripC: "#27e9ff",
+      };
+    }
+    if (wowFxMode === "midnight") {
+      return {
+        stripA: "#60a5fa",
+        stripB: "#4f46e5",
+        stripC: "#38bdf8",
+      };
+    }
+    return {
+      stripA: "#22d3ee",
+      stripB: "#34d399",
+      stripC: "#38bdf8",
+    };
+  }, [wowFxMode]);
+  const neonBoost = wowFxMode === "neon" ? 1.35 : wowFxMode === "midnight" ? 1.12 : 1;
   const localNorthWallZ = localOfficeCenterZ - localOfficeHeight / 2;
   const localSouthWallZ = localOfficeCenterZ + localOfficeHeight / 2;
   const localWestWallX = localOfficeCenterX - localOfficeWidth / 2;
@@ -242,8 +420,49 @@ export const FloorAndWalls = memo(function FloorAndWalls({
         receiveShadow
       >
         <planeGeometry args={[localOfficeWidth, localOfficeHeight, 22, 14]} />
-        <meshLambertMaterial color="#c8a97e" />
+        <meshStandardMaterial color="#2d4153" roughness={0.82} metalness={0.1} />
       </mesh>
+      <mesh
+        position={[localOfficeCenterX, 0.006, localOfficeCenterZ]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        receiveShadow={false}
+      >
+        <planeGeometry args={[localOfficeWidth * 0.64, 0.08]} />
+        <meshStandardMaterial
+          color={wowPalette.stripA}
+          emissive={wowPalette.stripA}
+          emissiveIntensity={0.55}
+          roughness={0.24}
+          metalness={0.48}
+          transparent
+          opacity={0.8}
+        />
+      </mesh>
+      <mesh
+        position={[localOfficeCenterX, 0.006, localOfficeCenterZ]}
+        rotation={[-Math.PI / 2, Math.PI / 2, 0]}
+        receiveShadow={false}
+      >
+        <planeGeometry args={[localOfficeHeight * 0.48, 0.05]} />
+        <meshStandardMaterial
+          color={wowPalette.stripB}
+          emissive={wowPalette.stripB}
+          emissiveIntensity={0.44}
+          roughness={0.22}
+          metalness={0.45}
+          transparent
+          opacity={0.68}
+        />
+      </mesh>
+      <AnimatedLightLines
+        centerX={localOfficeCenterX}
+        centerZ={localOfficeCenterZ}
+        officeWidth={localOfficeWidth}
+        officeHeight={localOfficeHeight}
+        primaryColor={wowPalette.stripA}
+        secondaryColor={wowPalette.stripB}
+        intensityBoost={neonBoost}
+      />
 
       {showRemoteOffice ? (
         <>
@@ -253,8 +472,49 @@ export const FloorAndWalls = memo(function FloorAndWalls({
             receiveShadow
           >
             <planeGeometry args={[localOfficeWidth, localOfficeHeight, 22, 14]} />
-            <meshLambertMaterial color="#c8a97e" />
+            <meshStandardMaterial color="#2d4153" roughness={0.82} metalness={0.1} />
           </mesh>
+          <mesh
+            position={[localOfficeCenterX, 0.006, localOfficeCenterZ + remoteOfficeOffsetZ]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            receiveShadow={false}
+          >
+            <planeGeometry args={[localOfficeWidth * 0.64, 0.08]} />
+            <meshStandardMaterial
+              color={wowPalette.stripC}
+              emissive={wowPalette.stripC}
+              emissiveIntensity={0.5}
+              roughness={0.24}
+              metalness={0.48}
+              transparent
+              opacity={0.72}
+            />
+          </mesh>
+          <mesh
+            position={[localOfficeCenterX, 0.006, localOfficeCenterZ + remoteOfficeOffsetZ]}
+            rotation={[-Math.PI / 2, Math.PI / 2, 0]}
+            receiveShadow={false}
+          >
+            <planeGeometry args={[localOfficeHeight * 0.48, 0.05]} />
+            <meshStandardMaterial
+              color={wowPalette.stripB}
+              emissive={wowPalette.stripB}
+              emissiveIntensity={0.38}
+              roughness={0.22}
+              metalness={0.45}
+              transparent
+              opacity={0.58}
+            />
+          </mesh>
+          <AnimatedLightLines
+            centerX={localOfficeCenterX}
+            centerZ={localOfficeCenterZ + remoteOfficeOffsetZ}
+            officeWidth={localOfficeWidth}
+            officeHeight={localOfficeHeight}
+            primaryColor={wowPalette.stripC}
+            secondaryColor={wowPalette.stripB}
+            intensityBoost={neonBoost}
+          />
 
           <mesh
             position={[pathCenterX, 0.002, pathCenterZ]}
@@ -366,9 +626,9 @@ export const FloorAndWalls = memo(function FloorAndWalls({
           >
             <planeGeometry args={[gymZoneFloorWidth, roomZoneFloorHeight]} />
             <meshStandardMaterial
-              color="#24272d"
-              roughness={0.95}
-              metalness={0.05}
+              color="#2a3340"
+              roughness={0.88}
+              metalness={0.12}
             />
           </mesh>
           {showRemoteOffice ? (
@@ -379,9 +639,9 @@ export const FloorAndWalls = memo(function FloorAndWalls({
             >
               <planeGeometry args={[gymZoneFloorWidth, roomZoneFloorHeight]} />
               <meshStandardMaterial
-                color="#24272d"
-                roughness={0.95}
-                metalness={0.05}
+                color="#2a3340"
+                roughness={0.88}
+                metalness={0.12}
               />
             </mesh>
           ) : null}
@@ -397,9 +657,9 @@ export const FloorAndWalls = memo(function FloorAndWalls({
           >
             <planeGeometry args={[qaZoneFloorWidth, roomZoneFloorHeight]} />
             <meshStandardMaterial
-              color="#12091d"
-              roughness={0.92}
-              metalness={0.08}
+              color="#18223a"
+              roughness={0.84}
+              metalness={0.14}
             />
           </mesh>
           {showRemoteOffice ? (
@@ -410,9 +670,9 @@ export const FloorAndWalls = memo(function FloorAndWalls({
             >
               <planeGeometry args={[qaZoneFloorWidth, roomZoneFloorHeight]} />
               <meshStandardMaterial
-                color="#12091d"
-                roughness={0.92}
-                metalness={0.08}
+                color="#18223a"
+                roughness={0.84}
+                metalness={0.14}
               />
             </mesh>
           ) : null}
@@ -423,9 +683,9 @@ export const FloorAndWalls = memo(function FloorAndWalls({
           >
             <planeGeometry args={[qaZoneFloorWidth * 0.96, roomZoneFloorHeight * 0.88]} />
             <meshStandardMaterial
-              color="#170d28"
-              roughness={0.86}
-              metalness={0.12}
+              color="#24345c"
+              roughness={0.78}
+              metalness={0.16}
             />
           </mesh>
           {showRemoteOffice ? (
@@ -436,9 +696,9 @@ export const FloorAndWalls = memo(function FloorAndWalls({
             >
               <planeGeometry args={[qaZoneFloorWidth * 0.96, roomZoneFloorHeight * 0.88]} />
               <meshStandardMaterial
-                color="#170d28"
-                roughness={0.86}
-                metalness={0.12}
+                color="#24345c"
+                roughness={0.78}
+                metalness={0.16}
               />
             </mesh>
           ) : null}
@@ -517,7 +777,7 @@ export const FloorAndWalls = memo(function FloorAndWalls({
               rotation={[-Math.PI / 2, 0, 0]}
             >
               <planeGeometry args={[localOfficeWidth, 0.008]} />
-              <meshBasicMaterial color="#a07850" transparent opacity={0.25} />
+              <meshBasicMaterial color="#68b7d8" transparent opacity={0.16} />
             </mesh>
             {showRemoteOffice ? (
               <mesh
@@ -525,7 +785,7 @@ export const FloorAndWalls = memo(function FloorAndWalls({
                 rotation={[-Math.PI / 2, 0, 0]}
               >
                 <planeGeometry args={[localOfficeWidth, 0.008]} />
-                <meshBasicMaterial color="#a07850" transparent opacity={0.25} />
+                <meshBasicMaterial color="#68b7d8" transparent opacity={0.16} />
               </mesh>
             ) : null}
           </group>
@@ -533,8 +793,61 @@ export const FloorAndWalls = memo(function FloorAndWalls({
       })}
 
       {(() => {
-        const wallColor = "#8d6e63";
-        const wallEmissive = "#4e342e";
+        const localPlantAnchors: Array<[number, number]> = [
+          [210, 210],
+          [LOCAL_OFFICE_CANVAS_WIDTH - 210, 230],
+          [240, LOCAL_OFFICE_CANVAS_HEIGHT - 230],
+          [LOCAL_OFFICE_CANVAS_WIDTH - 250, LOCAL_OFFICE_CANVAS_HEIGHT - 210],
+        ];
+        return localPlantAnchors.map(([cx, cy], index) => {
+          const [wx, , wz] = toWorld(cx, cy);
+          const baseScale = 0.88 + (index % 2) * 0.1;
+          return (
+            <group key={`weed-cluster-local-${index}`}>
+              <mesh position={[wx, 0.05, wz]} castShadow>
+                <cylinderGeometry args={[0.07, 0.08, 0.1, 14]} />
+                <meshStandardMaterial color="#4f5d67" roughness={0.84} metalness={0.1} />
+              </mesh>
+              <StylizedWeedPlant position={[wx - 0.03, 0.07, wz - 0.01]} scale={baseScale} />
+              <StylizedWeedPlant position={[wx + 0.03, 0.07, wz + 0.02]} scale={baseScale * 0.92} />
+            </group>
+          );
+        });
+      })()}
+      {showRemoteOffice
+        ? (() => {
+            const remotePlantAnchors: Array<[number, number]> = [
+              [240, REMOTE_OFFICE_ZONE.minY + 190],
+              [LOCAL_OFFICE_CANVAS_WIDTH - 230, REMOTE_OFFICE_ZONE.minY + 220],
+              [280, REMOTE_OFFICE_ZONE.maxY - 230],
+              [LOCAL_OFFICE_CANVAS_WIDTH - 280, REMOTE_OFFICE_ZONE.maxY - 210],
+            ];
+            return remotePlantAnchors.map(([cx, cy], index) => {
+              const [wx, , wz] = toWorld(cx, cy);
+              const baseScale = 0.84 + (index % 2) * 0.12;
+              return (
+                <group key={`weed-cluster-remote-${index}`}>
+                  <mesh position={[wx, 0.05, wz]} castShadow>
+                    <cylinderGeometry args={[0.07, 0.08, 0.1, 14]} />
+                    <meshStandardMaterial color="#4f5d67" roughness={0.84} metalness={0.1} />
+                  </mesh>
+                  <StylizedWeedPlant
+                    position={[wx - 0.03, 0.07, wz - 0.01]}
+                    scale={baseScale}
+                  />
+                  <StylizedWeedPlant
+                    position={[wx + 0.03, 0.07, wz + 0.02]}
+                    scale={baseScale * 0.92}
+                  />
+                </group>
+              );
+            });
+          })()
+        : null}
+
+      {(() => {
+        const wallColor = "#8da4bc";
+        const wallEmissive = "#193a56";
 
         return (
           <>
@@ -543,8 +856,9 @@ export const FloorAndWalls = memo(function FloorAndWalls({
               <meshStandardMaterial
                 color={wallColor}
                 emissive={wallEmissive}
-                emissiveIntensity={0.4}
-                roughness={0.9}
+                emissiveIntensity={0.2}
+                roughness={0.75}
+                metalness={0.08}
               />
             </mesh>
             {showRemoteOffice ? (
@@ -556,8 +870,9 @@ export const FloorAndWalls = memo(function FloorAndWalls({
                 <meshStandardMaterial
                   color={wallColor}
                   emissive={wallEmissive}
-                  emissiveIntensity={0.4}
-                  roughness={0.9}
+                  emissiveIntensity={0.2}
+                  roughness={0.75}
+                  metalness={0.08}
                 />
               </mesh>
             ) : null}
@@ -566,8 +881,9 @@ export const FloorAndWalls = memo(function FloorAndWalls({
               <meshStandardMaterial
                 color={wallColor}
                 emissive={wallEmissive}
-                emissiveIntensity={0.4}
-                roughness={0.9}
+                emissiveIntensity={0.2}
+                roughness={0.75}
+                metalness={0.08}
               />
             </mesh>
             {showRemoteOffice ? (
@@ -579,8 +895,9 @@ export const FloorAndWalls = memo(function FloorAndWalls({
                 <meshStandardMaterial
                   color={wallColor}
                   emissive={wallEmissive}
-                  emissiveIntensity={0.4}
-                  roughness={0.9}
+                  emissiveIntensity={0.2}
+                  roughness={0.75}
+                  metalness={0.08}
                 />
               </mesh>
             ) : null}
@@ -589,8 +906,9 @@ export const FloorAndWalls = memo(function FloorAndWalls({
               <meshStandardMaterial
                 color={wallColor}
                 emissive={wallEmissive}
-                emissiveIntensity={0.4}
-                roughness={0.9}
+                emissiveIntensity={0.2}
+                roughness={0.75}
+                metalness={0.08}
               />
             </mesh>
             {showRemoteOffice ? (
@@ -602,8 +920,9 @@ export const FloorAndWalls = memo(function FloorAndWalls({
                 <meshStandardMaterial
                   color={wallColor}
                   emissive={wallEmissive}
-                  emissiveIntensity={0.4}
-                  roughness={0.9}
+                  emissiveIntensity={0.2}
+                  roughness={0.75}
+                  metalness={0.08}
                 />
               </mesh>
             ) : null}
@@ -612,8 +931,9 @@ export const FloorAndWalls = memo(function FloorAndWalls({
               <meshStandardMaterial
                 color={wallColor}
                 emissive={wallEmissive}
-                emissiveIntensity={0.4}
-                roughness={0.9}
+                emissiveIntensity={0.2}
+                roughness={0.75}
+                metalness={0.08}
               />
             </mesh>
             {showRemoteOffice ? (
@@ -625,8 +945,9 @@ export const FloorAndWalls = memo(function FloorAndWalls({
                 <meshStandardMaterial
                   color={wallColor}
                   emissive={wallEmissive}
-                  emissiveIntensity={0.4}
-                  roughness={0.9}
+                  emissiveIntensity={0.2}
+                  roughness={0.75}
+                  metalness={0.08}
                 />
               </mesh>
             ) : null}
@@ -636,42 +957,42 @@ export const FloorAndWalls = memo(function FloorAndWalls({
 
       <mesh position={[localOfficeCenterX, 0.03, localNorthWallZ + 0.04]}>
         <boxGeometry args={[localOfficeWidth, 0.06, 0.04]} />
-        <meshLambertMaterial color="#0c0c10" />
+        <meshLambertMaterial color="#142236" />
       </mesh>
       {showRemoteOffice ? (
         <mesh position={[localOfficeCenterX, 0.03, localNorthWallZ + 0.04 + remoteOfficeOffsetZ]}>
           <boxGeometry args={[localOfficeWidth, 0.06, 0.04]} />
-          <meshLambertMaterial color="#0c0c10" />
+          <meshLambertMaterial color="#142236" />
         </mesh>
       ) : null}
       <mesh position={[localOfficeCenterX, 0.03, localSouthWallZ - 0.04]}>
         <boxGeometry args={[localOfficeWidth, 0.06, 0.04]} />
-        <meshLambertMaterial color="#0c0c10" />
+        <meshLambertMaterial color="#142236" />
       </mesh>
       {showRemoteOffice ? (
         <mesh position={[localOfficeCenterX, 0.03, localSouthWallZ - 0.04 + remoteOfficeOffsetZ]}>
           <boxGeometry args={[localOfficeWidth, 0.06, 0.04]} />
-          <meshLambertMaterial color="#0c0c10" />
+          <meshLambertMaterial color="#142236" />
         </mesh>
       ) : null}
       <mesh position={[localWestWallX + 0.04, 0.03, localOfficeCenterZ]}>
         <boxGeometry args={[0.04, 0.06, localOfficeHeight]} />
-        <meshLambertMaterial color="#0c0c10" />
+        <meshLambertMaterial color="#142236" />
       </mesh>
       {showRemoteOffice ? (
         <mesh position={[localWestWallX + 0.04, 0.03, localOfficeCenterZ + remoteOfficeOffsetZ]}>
           <boxGeometry args={[0.04, 0.06, localOfficeHeight]} />
-          <meshLambertMaterial color="#0c0c10" />
+          <meshLambertMaterial color="#142236" />
         </mesh>
       ) : null}
       <mesh position={[localEastWallX - 0.04, 0.03, localOfficeCenterZ]}>
         <boxGeometry args={[0.04, 0.06, localOfficeHeight]} />
-        <meshLambertMaterial color="#0c0c10" />
+        <meshLambertMaterial color="#142236" />
       </mesh>
       {showRemoteOffice ? (
         <mesh position={[localEastWallX - 0.04, 0.03, localOfficeCenterZ + remoteOfficeOffsetZ]}>
           <boxGeometry args={[0.04, 0.06, localOfficeHeight]} />
-          <meshLambertMaterial color="#0c0c10" />
+          <meshLambertMaterial color="#142236" />
         </mesh>
       ) : null}
     </group>

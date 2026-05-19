@@ -243,33 +243,32 @@ export const buildSkillMarketplaceEntry = (
   };
 };
 
-export const buildSkillMarketplaceCollections = (
-  skills: SkillStatusEntry[],
-): Array<{
+export type SkillMarketplaceCollection = {
   id: SkillMarketplaceCollectionId;
+  key: string;
   label: string;
   entries: SkillMarketplaceEntry[];
-}> => {
+};
+
+export const buildSkillMarketplaceCollections = (
+  skills: SkillStatusEntry[],
+): SkillMarketplaceCollection[] => {
   const entries = skills.map(buildSkillMarketplaceEntry);
   const sourceGroups = groupSkillsBySource(skills);
-  const collections: Array<{
-    id: SkillMarketplaceCollectionId;
-    label: string;
-    entries: SkillMarketplaceEntry[];
-  }> = [];
+  const collections: SkillMarketplaceCollection[] = [];
 
   const featured = entries
     .filter((entry) => entry.metadata.featured)
     .slice(0, 6);
   if (featured.length > 0) {
-    collections.push({ id: "featured", label: "Featured", entries: featured });
+    collections.push({ id: "featured", key: "featured", label: "Featured", entries: featured });
   }
 
   const claw3d = entries.filter((entry) =>
     getPackagedSkillBySkillKey(entry.skill.skillKey),
   );
   if (claw3d.length > 0) {
-    collections.push({ id: "claw3d", label: "Claw3D", entries: claw3d });
+    collections.push({ id: "claw3d", key: "claw3d", label: "Claw3D", entries: claw3d });
   }
 
   const installed = entries.filter(
@@ -278,6 +277,7 @@ export const buildSkillMarketplaceCollections = (
   if (installed.length > 0) {
     collections.push({
       id: "installed",
+      key: "installed-readiness",
       label: "Installed",
       entries: installed,
     });
@@ -289,6 +289,7 @@ export const buildSkillMarketplaceCollections = (
   if (setupRequired.length > 0) {
     collections.push({
       id: "setup-required",
+      key: "setup-required",
       label: "Needs setup",
       entries: setupRequired,
     });
@@ -305,6 +306,7 @@ export const buildSkillMarketplaceCollections = (
         : "installed";
     collections.push({
       id: groupId,
+      key: `source:${group.id}:${group.label}`,
       label: group.label,
       entries: groupEntries,
     });

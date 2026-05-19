@@ -24,6 +24,31 @@ const formatAgentNameplateText = (value: string): string => {
   return firstName || normalized;
 };
 
+const resolveAgentInitials = (name: string, agentId: string): string => {
+  const source = name.trim() || agentId.replace(/^remote:/, "");
+  const parts = source.split(/[\s_-]+/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  return source.slice(0, 2).toUpperCase();
+};
+
+const resolveAgentRoleLabel = (agentId: string, subtitle: string): string => {
+  const value = `${agentId} ${subtitle}`.toLowerCase();
+  if (value.includes("lead")) return "LEADS";
+  if (value.includes("publish") || value.includes("viral")) return "MEDIA";
+  if (value.includes("code") || value.includes("coder")) return "CODE";
+  if (value.includes("monitor") || value.includes("ops")) return "OPS";
+  if (value.includes("space") || value.includes("browser")) return "WEB";
+  if (value.includes("voice") || value.includes("livekit")) return "VOICE";
+  if (value.includes("remote:")) return "REMOTE";
+  return "CORE";
+};
+
+const resolveAgentStatusMeta = (status: string) => {
+  if (status === "error") return { label: "ERR", color: "#fb7185", glow: "#7f1d1d" };
+  if (status === "working") return { label: "LIVE", color: "#22c55e", glow: "#064e3b" };
+  return { label: "IDLE", color: "#f59e0b", glow: "#78350f" };
+};
+
 export const AgentModel = memo(function AgentModel({
   agentId,
   name,
@@ -642,6 +667,12 @@ export const AgentModel = memo(function AgentModel({
   const speechBubbleBorderInset = activeSpeechBubble ? 0.03 : 0;
   const nameplateText = name ? formatAgentNameplateText(name) : "";
   const subtitleText = typeof subtitle === "string" ? subtitle.trim() : "";
+  const statusMeta = resolveAgentStatusMeta(status);
+  const roleLabel = resolveAgentRoleLabel(agentId, subtitleText);
+  const agentInitials = resolveAgentInitials(name, agentId);
+  const isRemoteAgent = agentId.startsWith("remote:") || roleLabel === "REMOTE";
+  const badgeWidth = Math.min(1.22, Math.max(0.88, 0.62 + nameplateText.length * 0.045));
+  const badgeHeight = subtitleText ? 0.44 : 0.34;
   const nameplateFontSize =
     nameplateText.length > 9 ? 0.118 : nameplateText.length > 7 ? 0.13 : 0.144;
 
@@ -1070,43 +1101,116 @@ export const AgentModel = memo(function AgentModel({
         />
       </mesh>
       {!activeSpeechBubble && nameplateText ? (
-        <Billboard position={[0, 1.05, 0]}>
-          <mesh position={[0, 0, -0.001]}>
-            <planeGeometry args={[0.82, subtitleText ? 0.34 : 0.24]} />
-            <meshBasicMaterial color="#080c14" transparent opacity={0.9} />
+        <Billboard position={[0, 1.28, 0]} scale={[1.35, 1.35, 1.35]}>
+          <mesh position={[0, 0, -0.004]} renderOrder={99980}>
+            <planeGeometry args={[badgeWidth + 0.08, badgeHeight + 0.08]} />
+            <meshBasicMaterial
+              color={statusMeta.glow}
+              transparent
+              opacity={status === "error" ? 0.58 : status === "working" ? 0.38 : 0.26}
+              depthTest={false}
+              depthWrite={false}
+            />
           </mesh>
-          <mesh position={[-0.392, 0, 0]}>
-            <planeGeometry args={[0.028, subtitleText ? 0.34 : 0.24]} />
-            <meshBasicMaterial color={color} />
+          <mesh position={[0, 0, -0.003]} renderOrder={99981}>
+            <planeGeometry args={[badgeWidth, badgeHeight]} />
+            <meshBasicMaterial
+              color="#080c14"
+              transparent
+              opacity={0.92}
+              depthTest={false}
+              depthWrite={false}
+            />
           </mesh>
-          <mesh position={[0.355, subtitleText ? 0.05 : 0, 0]}>
-            <circleGeometry args={[0.052, 14]} />
-            <meshBasicMaterial ref={statusDotMatRef} color="#ef4444" />
+          <mesh position={[0, badgeHeight / 2 - 0.018, -0.002]} renderOrder={99982}>
+            <planeGeometry args={[badgeWidth, 0.032]} />
+            <meshBasicMaterial color={statusMeta.color} transparent opacity={0.86} depthTest={false} />
+          </mesh>
+          <mesh position={[-badgeWidth / 2 + 0.14, 0.01, -0.001]} renderOrder={99983}>
+            <circleGeometry args={[0.105, 22]} />
+            <meshBasicMaterial color={color} transparent opacity={0.95} depthTest={false} />
+          </mesh>
+          <mesh position={[-badgeWidth / 2 + 0.14, 0.01, 0]} renderOrder={99984}>
+            <ringGeometry args={[0.116, 0.13, 24]} />
+            <meshBasicMaterial color={statusMeta.color} transparent opacity={0.88} depthTest={false} />
           </mesh>
           <Text
-            position={[-0.02, subtitleText ? 0.05 : 0, 0.001]}
-            fontSize={nameplateFontSize}
-            color="#e8dfc0"
+            position={[-badgeWidth / 2 + 0.14, 0.01, 0.002]}
+            fontSize={0.083}
+            color="#02111b"
             anchorX="center"
             anchorY="middle"
-            maxWidth={0.68}
             font={undefined}
+            renderOrder={99990}
+            material-depthTest={false}
+            material-depthWrite={false}
+          >
+            {agentInitials}
+          </Text>
+          <Text
+            position={[-0.02, subtitleText ? 0.072 : 0.035, 0.002]}
+            fontSize={nameplateFontSize}
+            color="#f8fafc"
+            anchorX="center"
+            anchorY="middle"
+            maxWidth={badgeWidth - 0.38}
+            font={undefined}
+            renderOrder={99990}
+            material-depthTest={false}
+            material-depthWrite={false}
           >
             {nameplateText}
           </Text>
           {subtitleText ? (
             <Text
-              position={[-0.02, -0.085, 0.001]}
-              fontSize={0.082}
-              color="#8ab4ff"
+              position={[-0.02, -0.055, 0.002]}
+              fontSize={0.074}
+              color="#9fb7ff"
               anchorX="center"
               anchorY="middle"
-              maxWidth={0.68}
+              maxWidth={badgeWidth - 0.38}
               font={undefined}
+              renderOrder={99990}
+              material-depthTest={false}
+              material-depthWrite={false}
             >
               {subtitleText}
             </Text>
           ) : null}
+          <mesh position={[badgeWidth / 2 - 0.14, 0.07, 0]} renderOrder={99984}>
+            <planeGeometry args={[0.22, 0.105]} />
+            <meshBasicMaterial color={statusMeta.color} transparent opacity={0.2} depthTest={false} />
+          </mesh>
+          <Text
+            position={[badgeWidth / 2 - 0.14, 0.07, 0.002]}
+            fontSize={0.052}
+            color={statusMeta.color}
+            anchorX="center"
+            anchorY="middle"
+            font={undefined}
+            renderOrder={99990}
+            material-depthTest={false}
+            material-depthWrite={false}
+          >
+            {statusMeta.label}
+          </Text>
+          <mesh position={[badgeWidth / 2 - 0.14, -0.07, 0]} renderOrder={99984}>
+            <planeGeometry args={[0.28, 0.105]} />
+            <meshBasicMaterial color={isRemoteAgent ? "#0e7490" : "#312e81"} transparent opacity={0.42} depthTest={false} />
+          </mesh>
+          <Text
+            position={[badgeWidth / 2 - 0.14, -0.07, 0.002]}
+            fontSize={0.046}
+            color={isRemoteAgent ? "#67e8f9" : "#c4b5fd"}
+            anchorX="center"
+            anchorY="middle"
+            font={undefined}
+            renderOrder={99990}
+            material-depthTest={false}
+            material-depthWrite={false}
+          >
+            {roleLabel}
+          </Text>
         </Billboard>
       ) : null}
       <group ref={awayBubbleRef} visible={false}>

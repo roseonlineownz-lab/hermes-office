@@ -19,8 +19,15 @@ export const useVoiceReplyPlayback = (params: {
   provider?: VoiceReplyProvider;
   voiceId?: string | null;
   speed?: number;
+  onProviderFallback?: (provider: VoiceReplyProvider) => void;
 }) => {
-  const { enabled, provider = "vibevoice", voiceId = null, speed = 1 } = params;
+  const {
+    enabled,
+    provider = "vibevoice",
+    voiceId = null,
+    speed = 1,
+    onProviderFallback,
+  } = params;
   const queueRef = useRef<VoiceReplyPlaybackRequest[]>([]);
   const processingRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -191,28 +198,7 @@ export const useVoiceReplyPlayback = (params: {
           signal,
         });
       const initialProvider = (request.provider ?? provider) as VoiceReplyProvider;
-      let response = await runVoiceRequest(initialProvider);
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
-        const errorMessage =
-          typeof body?.error === "string" ? body.error.trim() : "Voice reply request failed.";
-        if (
-          initialProvider === "elevenlabs" &&
-          errorMessage.includes("Missing ELEVENLABS_API_KEY")
-        ) {
-          if (!elevenLabsFallbackWarnedRef.current) {
-            elevenLabsFallbackWarnedRef.current = true;
-            console.warn(
-              "ELEVENLABS_API_KEY ontbreekt; voice replies vallen terug op VibeVoice."
-            );
-          }
-          response = await runVoiceRequest("vibevoice");
-        } else {
-          throw new Error(errorMessage);
-        }
-      }
+      const response = await runVoiceRequest(initialProvider);
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as
           | { error?: string }
@@ -223,7 +209,7 @@ export const useVoiceReplyPlayback = (params: {
       }
       return response.blob();
     },
-    [provider, speed, voiceId]
+    [onProviderFallback, provider, speed, voiceId]
   );
 
   const drainQueue = useCallback(async () => {

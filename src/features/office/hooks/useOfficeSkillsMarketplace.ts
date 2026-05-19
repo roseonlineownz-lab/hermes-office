@@ -344,7 +344,7 @@ export const useOfficeSkillsMarketplace = ({
         let installedIntoWorkspace = false;
         params.onProgress?.({
           percent: 38,
-          message: "Installing task-manager into the workspace.",
+          message: `Installing ${skillLabel(packagedSkill.name)} into the workspace.`,
         });
         try {
           await installPackagedSkillViaGatewayAgent({
@@ -378,12 +378,12 @@ export const useOfficeSkillsMarketplace = ({
         }
         params.onProgress?.({
           percent: 62,
-          message: "Enabling task-manager for this gateway.",
+          message: `Enabling ${skillLabel(packagedSkill.name)} for this gateway.`,
         });
         await updateSkill(client, { skillKey: packagedSkill.skillKey, enabled: true });
         params.onProgress?.({
           percent: 78,
-          message: "Enabling task-manager for the main agent.",
+          message: `Enabling ${skillLabel(packagedSkill.name)} for the main agent.`,
         });
         const refreshedReport = await loadAgentSkillStatus(client, targetAgentId);
         await setAgentSkillEnabled({
@@ -401,8 +401,8 @@ export const useOfficeSkillsMarketplace = ({
         params.onProgress?.({
           percent: 100,
           message: installedIntoWorkspace
-            ? "Task-manager installed and enabled."
-            : "Task-manager enabled (workspace fallback mode).",
+            ? `${skillLabel(packagedSkill.name)} installed and enabled.`
+            : `${skillLabel(packagedSkill.name)} enabled (workspace fallback mode).`,
         });
         const agentName =
           agents.find((agent) => agent.agentId === targetAgentId)?.name ?? "the main agent";

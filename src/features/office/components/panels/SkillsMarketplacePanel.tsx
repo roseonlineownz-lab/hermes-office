@@ -377,7 +377,7 @@ export function SkillsMarketplacePanel({
 
         {!marketplace.loading &&
           filteredCollections.map((collection) => (
-            <div key={collection.id} className="mt-4">
+            <div key={collection.key} className="mt-4">
               <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.18em] text-white/40">
                 {collection.label}
               </div>

@@ -3,6 +3,11 @@
 import {
   Pencil,
   Check,
+  Building2,
+  Link2,
+  Layers3,
+  Gauge,
+  AudioWaveform,
   Map as MapIcon,
   Maximize,
   Monitor,
@@ -234,6 +239,15 @@ type FeedEvent = {
   ts: number;
   kind?: "status" | "reply";
 };
+type LiveReceiptEntry = {
+  agentId: string;
+  name: string;
+  status: SceneActor["status"];
+  state: RenderAgent["state"] | "unknown";
+  text: string;
+  ts: number;
+  kind: "status" | "reply";
+};
 
 const EMPTY_STRING_RECORD: Record<string, string> = {};
 const EMPTY_BOOLEAN_RECORD: Record<string, boolean> = {};
@@ -245,6 +259,24 @@ const CLAW3D_STABLE_DPR_MIN = 1;
 const CLAW3D_STABLE_DPR_MAX = 2;
 const CLAW3D_SAFE_DPR_RANGE: [number, number] = [0.5, 0.9];
 const CLAW3D_HIDDEN_DPR = 0.6;
+const WOW_FX_OPTIONS = [
+  {
+    key: "aurora",
+    label: "Aurora",
+    chipClass: "border-cyan-300/45 bg-cyan-500/15 text-cyan-100",
+  },
+  {
+    key: "neon",
+    label: "Neon",
+    chipClass: "border-fuchsia-300/45 bg-fuchsia-500/15 text-fuchsia-100",
+  },
+  {
+    key: "midnight",
+    label: "Midnight",
+    chipClass: "border-indigo-300/45 bg-indigo-500/15 text-indigo-100",
+  },
+] as const;
+type WowFxMode = (typeof WOW_FX_OPTIONS)[number]["key"];
 
 const resolveClaw3dVisibleDpr = (maxDpr = CLAW3D_STABLE_DPR_MAX) =>
   Math.min(
@@ -256,6 +288,105 @@ type DragState =
   | { kind: "idle" }
   | { kind: "moving"; uid: string }
   | { kind: "placing"; itemType: string };
+
+const isOfficeAgent = (agent: SceneActor): agent is OfficeAgent =>
+  !("role" in agent && agent.role === "janitor");
+
+const formatReceiptAge = (timestamp: number) => {
+  const ageMs = Math.max(0, Date.now() - timestamp);
+  if (ageMs < 1000) return "now";
+  if (ageMs < 60_000) return `${Math.floor(ageMs / 1000)}s`;
+  return `${Math.floor(ageMs / 60_000)}m`;
+};
+
+function CeoSuperSaiyanAura({
+  ceoAgentId,
+  agentsRef,
+  agentLookupRef,
+}: {
+  ceoAgentId: string | null;
+  agentsRef: React.MutableRefObject<RenderAgent[]>;
+  agentLookupRef: React.MutableRefObject<Map<string, RenderAgent>>;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const haloRef = useRef<THREE.Mesh>(null);
+  const ringRef = useRef<THREE.Mesh>(null);
+  const energyRef = useRef<THREE.Group>(null);
+
+  useFrame(({ clock }) => {
+    if (!groupRef.current) return;
+    if (!ceoAgentId) {
+      groupRef.current.visible = false;
+      return;
+    }
+    const renderAgent =
+      agentLookupRef.current.get(ceoAgentId) ??
+      agentsRef.current.find((candidate) => candidate.id === ceoAgentId);
+    if (!renderAgent) {
+      groupRef.current.visible = false;
+      return;
+    }
+    groupRef.current.visible = true;
+    const [wx, , wz] = toWorld(renderAgent.x, renderAgent.y);
+    groupRef.current.position.set(wx, 0.18, wz);
+    const t = clock.getElapsedTime();
+    const pulse = 1 + Math.sin(t * 4.2) * 0.08;
+    groupRef.current.scale.setScalar(pulse);
+    if (haloRef.current) {
+      haloRef.current.rotation.z = t * 0.7;
+      const material = haloRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = 0.24 + Math.sin(t * 3.8) * 0.08;
+    }
+    if (ringRef.current) {
+      ringRef.current.rotation.z = -t * 1.4;
+      const material = ringRef.current.material as THREE.MeshStandardMaterial;
+      material.emissiveIntensity = 1.1 + Math.sin(t * 5.4) * 0.22;
+    }
+    if (energyRef.current) {
+      energyRef.current.rotation.y = t * 1.6;
+      energyRef.current.position.y = 0.04 + Math.sin(t * 2.6) * 0.02;
+    }
+  });
+
+  return (
+    <group ref={groupRef} visible={false}>
+      <mesh ref={haloRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
+        <planeGeometry args={[0.78, 0.78]} />
+        <meshBasicMaterial
+          color="#ffd74a"
+          transparent
+          opacity={0.24}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
+        <torusGeometry args={[0.31, 0.014, 10, 52]} />
+        <meshStandardMaterial
+          color="#ffe48a"
+          emissive="#ffbd2b"
+          emissiveIntensity={1.1}
+          roughness={0.24}
+          metalness={0.55}
+          transparent
+          opacity={0.92}
+        />
+      </mesh>
+      <group ref={energyRef} position={[0, 0.08, 0]}>
+        {[0, Math.PI / 3, -Math.PI / 3].map((angle, index) => (
+          <mesh key={`ceo-energy-${index}`} rotation={[0, angle, 0]}>
+            <planeGeometry args={[0.1, 0.46]} />
+            <meshBasicMaterial
+              color={index === 0 ? "#ffe28f" : "#ffd45a"}
+              transparent
+              opacity={0.3}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        ))}
+      </group>
+    </group>
+  );
+}
 
 const SMS_CONTACT_SEED_NAMES = [
   "Avery",
@@ -2788,6 +2919,7 @@ export function RetroOffice3D({
   // New Idea 7: heatmap mode.
   const [heatmapMode, setHeatmapMode] = useState(false);
   const [trailMode, setTrailMode] = useState(false);
+  const [wowFxMode, setWowFxMode] = useState<WowFxMode>("neon");
   const heatGridRef = useRef<Uint16Array | null>(null);
   // E3 Idea 1: mood emoji reactions above agent chips.
   const [moodByAgentId, setMoodByAgentId] = useState<
@@ -5364,8 +5496,66 @@ export function RetroOffice3D({
     cameraPresetRef.current = overviewPreset;
   }, [officeCenterSignal, overviewPreset]);
 
+  const remoteOfficeConfigured =
+    remoteOfficeSourceKind === "presence_endpoint"
+      ? remoteOfficePresenceUrl.trim().length > 0
+      : remoteOfficeGatewayUrl.trim().length > 0;
+  const remoteOfficeRouteLabel = remoteOfficeLabel.trim() || "Remote Lab";
+  const floorNavButtons = [
+    {
+      key: "ops",
+      label: "Ops",
+      preset: "frontDesk" as const,
+      accentClass: "border-sky-300/45 bg-sky-500/15 text-sky-100",
+    },
+    {
+      key: "social",
+      label: "Social",
+      preset: "lounge" as const,
+      accentClass: "border-teal-300/45 bg-teal-500/15 text-teal-100",
+    },
+    {
+      key: "overview",
+      label: "Deck",
+      preset: "overview" as const,
+      accentClass: "border-amber-300/45 bg-amber-500/15 text-amber-100",
+    },
+  ];
+  const wowLighting = useMemo(() => {
+    if (wowFxMode === "neon") {
+      return {
+        ambientIntensity: 0.58,
+        ambientColor: "#90b4ff",
+        keyIntensity: 1.28,
+        keyColor: "#d5e6ff",
+        rimIntensity: 0.55,
+        rimColor: "#d946ef",
+      };
+    }
+    if (wowFxMode === "midnight") {
+      return {
+        ambientIntensity: 0.5,
+        ambientColor: "#8aa9cf",
+        keyIntensity: 1.05,
+        keyColor: "#d2ddf0",
+        rimIntensity: 0.38,
+        rimColor: "#4f7cff",
+      };
+    }
+    return {
+      ambientIntensity: 0.66,
+      ambientColor: "#b8d5f2",
+      keyIntensity: 1.18,
+      keyColor: "#e8f7ff",
+      rimIntensity: 0.45,
+      rimColor: "#22d3ee",
+    };
+  }, [wowFxMode]);
+
   return (
-    <div className="relative w-full h-full bg-[#1a1008] font-mono text-white overflow-hidden">
+    <div
+      className={`retro-office-shell wow-mode-${wowFxMode} relative h-full w-full overflow-hidden font-mono text-white`}
+    >
       {/* 3D Canvas — fills everything. */}
       <div
         className="absolute inset-0"
@@ -5467,11 +5657,14 @@ export function RetroOffice3D({
             />
 
             {/* Keep office lighting static to avoid extra scene churn from ambience effects. */}
-            <ambientLight intensity={0.72} color="#d8d4c8" />
+            <ambientLight
+              intensity={wowLighting.ambientIntensity}
+              color={wowLighting.ambientColor}
+            />
             <directionalLight
               position={[8, 14, 6]}
-              intensity={1.1}
-              color="#f6f1e6"
+              intensity={wowLighting.keyIntensity}
+              color={wowLighting.keyColor}
               castShadow={!webglSafeMode}
               shadow-mapSize={[1024, 1024]}
               shadow-bias={-0.0002}
@@ -5479,12 +5672,15 @@ export function RetroOffice3D({
             />
             <directionalLight
               position={[-5, 8, -4]}
-              intensity={0.4}
-              color="#7090ff"
+              intensity={wowLighting.rimIntensity}
+              color={wowLighting.rimColor}
             />
 
             {/* Floor + walls — always visible, no async loading. */}
-            <SceneFloorAndWalls showRemoteOffice={remoteOfficeEnabled} />
+            <SceneFloorAndWalls
+              showRemoteOffice={remoteOfficeEnabled}
+              wowFxMode={wowFxMode}
+            />
 
             {/* Wall pictures — procedural, no async loading. */}
             <SceneWallPictures showRemoteOffice={remoteOfficeEnabled} />
@@ -6045,16 +6241,125 @@ export function RetroOffice3D({
         ) : null}
       </div>
 
+      {!immersiveOverlayActive ? (
+        <>
+          <div
+            className={`pointer-events-none absolute inset-0 z-[4] wow-atmosphere wow-atmosphere-${wowFxMode}`}
+          />
+          <div
+            className={`pointer-events-none absolute inset-0 z-[5] wow-grid wow-grid-${wowFxMode}`}
+          />
+          <div className="pointer-events-none absolute inset-0 z-[6] wow-vignette" />
+        </>
+      ) : null}
+
       {webglContextLost && !immersiveOverlayActive ? (
         <div className="pointer-events-none absolute bottom-3 left-3 z-30 rounded-md border border-amber-500/30 bg-[#120d08]/90 px-3 py-2 text-[11px] text-amber-100 shadow-lg backdrop-blur-sm">
           3D renderer herstelt...
         </div>
       ) : null}
 
-      {/* New Idea 2: Camera preset buttons — top left. */}
+      {/* Mission control deck — top left. */}
       {!readOnly && !immersiveOverlayActive ? (
-        <div className="absolute top-3 left-3 z-20 flex flex-col items-start gap-2">
-          <div className="flex items-center gap-1">
+        <div className="hud-glow hud-panel absolute top-3 left-3 z-20 w-[calc(100%-1.5rem)] max-w-[280px] rounded-2xl border border-cyan-500/25 p-3 shadow-2xl backdrop-blur-md">
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-cyan-200/80">
+                Office Deck
+              </div>
+              <div className="mt-1 text-[11px] text-white/70">
+                Linked offices, floors, and quick jumps.
+              </div>
+            </div>
+            <div className="rounded-md border border-cyan-400/35 bg-cyan-500/10 p-1.5 text-cyan-200">
+              <Layers3 size={12} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                onRemoteOfficeEnabledChange?.(false);
+                cameraPresetRef.current = CAMERA_PRESET_MAP.overview;
+              }}
+            className={`hud-chip rounded-lg border px-2.5 py-2 text-left transition ${
+                !remoteOfficeEnabled
+                  ? "border-amber-300/55 bg-amber-500/18 text-amber-50"
+                  : "border-amber-700/30 bg-[#140f08] text-amber-200/75 hover:border-amber-400/40"
+              }`}
+            >
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]">
+                <Building2 size={11} />
+                HQ
+              </div>
+              <div className="mt-1 text-[10px] text-white/65">Primary Office</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!remoteOfficeConfigured) {
+                  setSettingsModalOpen(true);
+                  return;
+                }
+                onRemoteOfficeEnabledChange?.(true);
+                cameraPresetRef.current = CAMERA_PRESET_MAP.overview;
+              }}
+            className={`hud-chip rounded-lg border px-2.5 py-2 text-left transition ${
+                remoteOfficeEnabled
+                  ? "border-cyan-300/60 bg-cyan-500/20 text-cyan-50"
+                  : "border-cyan-700/30 bg-[#08131b] text-cyan-200/75 hover:border-cyan-400/45"
+              }`}
+            >
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]">
+                <Link2 size={11} />
+                {remoteOfficeRouteLabel}
+              </div>
+              <div className="mt-1 text-[10px] text-white/65">
+                {remoteOfficeConfigured ? "Linked route ready" : "Configure route"}
+              </div>
+            </button>
+          </div>
+          <div className="mt-3">
+            <div className="mb-1.5 text-[10px] uppercase tracking-[0.14em] text-cyan-100/70">
+              Floor Views
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {floorNavButtons.map((entry) => (
+                <button
+                  key={entry.key}
+                  type="button"
+                  onClick={() => {
+                    cameraPresetRef.current = CAMERA_PRESET_MAP[entry.preset];
+                  }}
+                  className={`hud-chip rounded-md border px-2 py-1 text-[10px] uppercase tracking-[0.12em] transition ${entry.accentClass}`}
+                >
+                  {entry.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="mt-2.5">
+            <div className="mb-1.5 text-[10px] uppercase tracking-[0.14em] text-cyan-100/70">
+              FX Template
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {WOW_FX_OPTIONS.map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => setWowFxMode(option.key)}
+                  className={`rounded-md border px-2 py-1 text-[10px] uppercase tracking-[0.12em] transition ${
+                    option.key === wowFxMode
+                      ? option.chipClass
+                      : "border-cyan-700/30 bg-[#0a1622]/45 text-cyan-200/65 hover:border-cyan-400/45"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="mt-3 flex items-center gap-1.5">
             {(
               [
                 {
@@ -6080,9 +6385,9 @@ export function RetroOffice3D({
                 onClick={() => {
                   cameraPresetRef.current = CAMERA_PRESET_MAP[key];
                 }}
-                className="w-7 h-7 flex items-center justify-center rounded-md bg-[#1c1610]/80 text-amber-500/60 border border-amber-900/20 hover:bg-[#2a1e14] hover:text-amber-400 backdrop-blur-sm transition-colors"
+                className="hud-chip h-8 w-8 rounded-md border border-cyan-500/25 bg-cyan-500/10 text-cyan-200/80 transition hover:border-cyan-300/45 hover:text-cyan-100"
               >
-                {icon}
+                <span className="flex items-center justify-center">{icon}</span>
               </button>
             ))}
           </div>
@@ -6090,19 +6395,12 @@ export function RetroOffice3D({
             <button
               type="button"
               onClick={() => setStandupBoardOpen(true)}
-              className="rounded-xl border border-emerald-500/20 bg-[#0b1410]/90 px-3 py-2 text-left shadow-lg backdrop-blur-sm transition-colors hover:border-emerald-400/35 hover:bg-[#102017]/95"
+              className="mt-3 w-full rounded-lg border border-emerald-400/30 bg-emerald-500/12 px-3 py-2 text-left transition hover:border-emerald-300/50 hover:bg-emerald-500/20"
             >
-              <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-200/80">
-                Standup
+              <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-100/90">
+                Standup Live
               </div>
-              <div className="mt-1 text-[11px] font-semibold text-white/90">
-                {standupMeeting.phase === "gathering"
-                  ? "Gathering in meeting room."
-                  : standupMeeting.phase === "in_progress"
-                    ? `Speaking: ${standupSpeakerCard?.agentName ?? "Team"}`
-                    : ""}
-              </div>
-              <div className="mt-1 font-mono text-[10px] text-white/50">
+              <div className="mt-1 text-[11px] text-white/85">
                 {standupMeeting.arrivedAgentIds.length}/
                 {standupMeeting.participantOrder.length} arrived
               </div>
@@ -6112,10 +6410,10 @@ export function RetroOffice3D({
             <button
               type="button"
               onClick={() => openKanbanBoard(kanbanBoardItem)}
-              className="rounded-xl border border-cyan-500/22 bg-[#09111a]/90 px-3 py-2 text-left shadow-lg backdrop-blur-sm transition-colors hover:border-cyan-300/40 hover:bg-[#0d1b28]/95"
+              className="mt-2 w-full rounded-lg border border-violet-400/35 bg-violet-500/14 px-3 py-2 text-left transition hover:border-violet-300/55 hover:bg-violet-500/20"
             >
-              <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200/80">
-                Kanban board
+              <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-violet-100/90">
+                Kanban Board
               </div>
             </button>
           ) : null}
@@ -6125,12 +6423,18 @@ export function RetroOffice3D({
       {/* Title — top center overlay. */}
       {!immersiveOverlayActive ? (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 pointer-events-none select-none z-10">
+          <div className="hud-panel hud-panel-subtle rounded-full border border-cyan-400/30 px-4 py-1.5 shadow-lg backdrop-blur-sm">
+            <div className="flex items-center gap-2 text-cyan-200/85">
+              <Gauge size={12} />
+              <span className="font-mono text-[10px] uppercase tracking-[0.18em]">Control Plane</span>
+            </div>
+          </div>
           <div className="flex items-center gap-3">
-            <div className="h-px w-12 bg-gradient-to-r from-transparent to-amber-500/40" />
-            <span className="text-sm tracking-[0.3em] text-amber-300/80 font-bold uppercase">
+            <div className="h-px w-12 bg-gradient-to-r from-transparent to-cyan-400/45" />
+            <span className="text-sm tracking-[0.3em] text-cyan-100/90 font-bold uppercase">
               {officeTitle}
             </span>
-            <div className="h-px w-12 bg-gradient-to-l from-transparent to-amber-500/40" />
+            <div className="h-px w-12 bg-gradient-to-l from-transparent to-cyan-400/45" />
           </div>
         </div>
       ) : null}
@@ -7185,8 +7489,9 @@ export function RetroOffice3D({
             <button
               onClick={() => setSettingsModalOpen(true)}
               title={remoteOfficeStatusText}
-              className="flex h-7 items-center justify-center gap-1 rounded-md border border-white/15 bg-[#120e08]/92 px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/75 transition-all backdrop-blur-sm hover:border-cyan-400/45 hover:text-cyan-100"
+              className="hud-chip flex h-7 items-center justify-center gap-1 rounded-md border border-cyan-400/35 bg-cyan-500/12 px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100 transition-all backdrop-blur-sm hover:border-cyan-300/60 hover:bg-cyan-500/18"
             >
+              <Link2 size={11} />
               <span>{remoteOfficeLabel}</span>
             </button>
           ) : null}
@@ -7201,16 +7506,31 @@ export function RetroOffice3D({
             </button>
           ) : null}
           <div
-            className={`flex h-7 items-center rounded-md border px-2 text-[10px] font-mono uppercase tracking-[0.12em] ${
+            className={`hud-chip flex h-7 items-center rounded-md border px-2 text-[10px] font-mono uppercase tracking-[0.12em] ${
               gatewayStatus === "connected"
-                ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-100"
+                ? "border-emerald-300/45 bg-emerald-500/18 text-emerald-50"
                 : gatewayStatus === "connecting"
-                  ? "border-amber-400/25 bg-amber-500/10 text-amber-100"
-                  : "border-rose-400/25 bg-rose-500/10 text-rose-100"
+                  ? "border-amber-300/45 bg-amber-500/18 text-amber-50"
+                  : "border-rose-300/45 bg-rose-500/18 text-rose-50"
             }`}
             title={`Runtime: ${activeAdapterType} (${gatewayStatus})`}
           >
             {activeAdapterType} • {gatewayStatus}
+          </div>
+          {/* Voice Path Lamp - production fixed with existing props (no undefined vars) */}
+          <div
+            className={`hud-chip flex h-7 items-center gap-1 rounded-md border px-2 text-[10px] font-mono uppercase tracking-[0.12em] ${
+              voiceRepliesEnabled
+                ? "border-cyan-300/45 bg-cyan-500/16 text-cyan-50"
+                : "border-slate-500/40 bg-slate-500/12 text-slate-200/80"
+            }`}
+            title={`Voice Path: ${voiceRepliesProvider ?? "vibevoice"} | fallback: vibevoice | enabled: ${voiceRepliesEnabled}`}
+          >
+            <AudioWaveform size={11} />
+            {voiceRepliesProvider ?? "vibevoice"}
+            <span className="text-[9px] opacity-70">
+              {voiceRepliesEnabled ? "● LIVE" : "○ OFF"}
+            </span>
           </div>
           {/* New Idea 7: Heatmap toggle. */}
           <button
@@ -7452,6 +7772,33 @@ export function RetroOffice3D({
               )}
             </div>
           </div>
+          <div className="hud-glow hud-panel pointer-events-none absolute bottom-3 right-3 z-10 w-[calc(100%-1.5rem)] max-w-[260px] rounded-xl border border-cyan-500/28 p-3 text-[10px] font-mono shadow-xl backdrop-blur-md">
+            <div className="mb-2 flex items-center justify-between text-cyan-100/85">
+              <div className="flex items-center gap-1.5">
+                <Gauge size={11} />
+                <span className="uppercase tracking-[0.14em]">Diagnostics</span>
+              </div>
+              <span className="uppercase tracking-[0.12em] text-cyan-200/70">
+                {remoteOfficeEnabled ? "dual-office" : "single-office"}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-white/78">
+              <span className="text-cyan-200/70">Runtime</span>
+              <span className="text-right">{activeAdapterType}</span>
+              <span className="text-cyan-200/70">Gateway</span>
+              <span className="text-right">{gatewayStatus}</span>
+              <span className="text-cyan-200/70">Agents</span>
+              <span className="text-right">{agents.length}</span>
+              <span className="text-cyan-200/70">Voice</span>
+              <span className="text-right">
+                {voiceRepliesEnabled ? voiceRepliesProvider ?? "vibevoice" : "off"}
+              </span>
+              <span className="text-cyan-200/70">Linked Route</span>
+              <span className="text-right">
+                {remoteOfficeConfigured ? remoteOfficeRouteLabel : "not set"}
+              </span>
+            </div>
+          </div>
         </>
       ) : null}
       <style>{`
@@ -7462,6 +7809,128 @@ export function RetroOffice3D({
         @keyframes mood-float {
           0%   { transform: translateX(-50%) translateY(0px); opacity: 1; }
           100% { transform: translateX(-50%) translateY(-28px); opacity: 0; }
+        }
+        @keyframes hud-glow {
+          0% { box-shadow: 0 0 0 rgba(34,211,238,0.0), 0 0 24px rgba(34,211,238,0.16); }
+          50% { box-shadow: 0 0 0 rgba(34,211,238,0.0), 0 0 36px rgba(34,211,238,0.26); }
+          100% { box-shadow: 0 0 0 rgba(34,211,238,0.0), 0 0 24px rgba(34,211,238,0.16); }
+        }
+        @keyframes hud-breathe {
+          0% { transform: translateY(0px); }
+          50% { transform: translateY(-1px); }
+          100% { transform: translateY(0px); }
+        }
+        @keyframes wow-drift {
+          0% { transform: translate3d(-2%, -1%, 0) scale(1.03); }
+          50% { transform: translate3d(2%, 1%, 0) scale(1.08); }
+          100% { transform: translate3d(-2%, -1%, 0) scale(1.03); }
+        }
+        @keyframes wow-grid-pan {
+          0% { background-position: 0 0, 0 0; opacity: 0.12; }
+          50% { background-position: 56px 34px, 0 0; opacity: 0.2; }
+          100% { background-position: 0 0, 0 0; opacity: 0.12; }
+        }
+        @keyframes wow-vignette-pulse {
+          0% { opacity: 0.5; }
+          50% { opacity: 0.72; }
+          100% { opacity: 0.5; }
+        }
+        .hud-glow {
+          animation: hud-glow 3.2s ease-in-out infinite;
+        }
+        .hud-chip {
+          animation: hud-breathe 2.8s ease-in-out infinite;
+        }
+        .hud-panel {
+          background:
+            radial-gradient(120% 120% at 100% 0%, rgba(34, 211, 238, 0.14), rgba(5, 12, 18, 0.52) 45%, rgba(5, 12, 18, 0.34)),
+            linear-gradient(135deg, rgba(5, 14, 22, 0.62), rgba(4, 10, 16, 0.34));
+          border-color: rgba(56, 189, 248, 0.34);
+          box-shadow: 0 18px 36px rgba(3, 9, 16, 0.38), inset 0 1px 0 rgba(186, 230, 253, 0.14);
+        }
+        .hud-panel-subtle {
+          background:
+            radial-gradient(140% 140% at 100% 0%, rgba(34, 211, 238, 0.12), rgba(6, 13, 21, 0.48) 40%, rgba(6, 13, 21, 0.3)),
+            linear-gradient(135deg, rgba(6, 13, 21, 0.48), rgba(6, 13, 21, 0.26));
+        }
+        .retro-office-shell {
+          background: linear-gradient(165deg, #04080f 0%, #081524 52%, #04070e 100%);
+          isolation: isolate;
+        }
+        .wow-atmosphere {
+          transform-origin: center;
+          animation: wow-drift 18s ease-in-out infinite;
+          filter: saturate(1.1);
+          mix-blend-mode: screen;
+        }
+        .wow-atmosphere-aurora {
+          opacity: 0.5;
+          background:
+            radial-gradient(42% 34% at 14% 16%, rgba(34, 211, 238, 0.42), transparent 70%),
+            radial-gradient(38% 30% at 86% 14%, rgba(16, 185, 129, 0.38), transparent 70%),
+            radial-gradient(46% 38% at 50% 86%, rgba(56, 189, 248, 0.24), transparent 78%);
+        }
+        .wow-atmosphere-neon {
+          opacity: 0.58;
+          background:
+            radial-gradient(40% 32% at 16% 18%, rgba(244, 114, 182, 0.44), transparent 70%),
+            radial-gradient(42% 34% at 82% 22%, rgba(99, 102, 241, 0.44), transparent 70%),
+            radial-gradient(46% 36% at 52% 84%, rgba(34, 211, 238, 0.3), transparent 78%);
+        }
+        .wow-atmosphere-midnight {
+          opacity: 0.46;
+          background:
+            radial-gradient(42% 34% at 18% 14%, rgba(59, 130, 246, 0.4), transparent 72%),
+            radial-gradient(38% 30% at 86% 22%, rgba(79, 70, 229, 0.38), transparent 72%),
+            radial-gradient(44% 36% at 46% 88%, rgba(14, 165, 233, 0.22), transparent 80%);
+        }
+        .wow-grid {
+          mix-blend-mode: soft-light;
+          animation: wow-grid-pan 9s linear infinite;
+        }
+        .wow-grid-aurora {
+          background-image:
+            linear-gradient(rgba(103, 232, 249, 0.28) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(125, 211, 252, 0.26) 1px, transparent 1px);
+          background-size: 64px 64px;
+        }
+        .wow-grid-neon {
+          background-image:
+            linear-gradient(rgba(244, 114, 182, 0.32) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(129, 140, 248, 0.28) 1px, transparent 1px);
+          background-size: 56px 56px;
+        }
+        .wow-grid-midnight {
+          background-image:
+            linear-gradient(rgba(96, 165, 250, 0.24) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(59, 130, 246, 0.22) 1px, transparent 1px);
+          background-size: 70px 70px;
+        }
+        .wow-vignette {
+          background:
+            radial-gradient(circle at 50% 30%, transparent 0%, rgba(2, 6, 23, 0.04) 46%, rgba(2, 6, 23, 0.62) 100%);
+          animation: wow-vignette-pulse 6s ease-in-out infinite;
+        }
+        .wow-mode-neon .hud-panel {
+          border-color: rgba(232, 121, 249, 0.42);
+          box-shadow: 0 18px 36px rgba(6, 8, 30, 0.42), inset 0 1px 0 rgba(233, 213, 255, 0.2);
+        }
+        .wow-mode-midnight .hud-panel {
+          border-color: rgba(129, 140, 248, 0.36);
+          box-shadow: 0 18px 36px rgba(3, 6, 23, 0.46), inset 0 1px 0 rgba(191, 219, 254, 0.16);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .hud-glow {
+            animation: none;
+          }
+          .hud-chip {
+            animation: none;
+          }
+          .wow-atmosphere,
+          .wow-grid,
+          .wow-vignette {
+            animation: none;
+          }
         }
       `}</style>
     </div>

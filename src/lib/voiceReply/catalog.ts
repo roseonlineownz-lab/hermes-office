@@ -113,5 +113,6 @@ export const getVoicesForProvider = (provider: string): CuratedVoiceOption[] => 
   const value = provider.toLowerCase();
   if (value === "kokoro") return CURATED_KOKORO_VOICES;
   if (value === "vibevoice") return CURATED_VIBEVOICE_VOICES;
-  return CURATED_ELEVENLABS_VOICES;
+  if (value === "elevenlabs") return CURATED_ELEVENLABS_VOICES;
+  return CURATED_VIBEVOICE_VOICES;
 };

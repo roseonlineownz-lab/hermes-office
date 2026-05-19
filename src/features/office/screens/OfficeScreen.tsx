@@ -1193,9 +1193,11 @@ export function OfficeScreen({
     loaded: voiceRepliesLoaded,
     preference: voiceRepliesPreference,
     enabled: voiceRepliesEnabled,
+    provider: voiceRepliesProvider,
     voiceId: voiceRepliesVoiceId,
     speed: voiceRepliesSpeed,
     setEnabled: setVoiceRepliesEnabled,
+    setProvider: setVoiceRepliesProvider,
     setVoiceId: setVoiceRepliesVoiceId,
     setSpeed: setVoiceRepliesSpeed,
   } = useStudioVoiceRepliesPreference({
@@ -1211,6 +1213,9 @@ export function OfficeScreen({
     provider: voiceRepliesPreference.provider,
     voiceId: voiceRepliesPreference.voiceId,
     speed: voiceRepliesPreference.speed,
+    onProviderFallback: (provider) => {
+      setVoiceRepliesProvider(provider);
+    },
   });
   const showOnboardingWizard = showOnboarding || forceShowOnboarding;
   const handleOpenOnboarding = useCallback(() => {
@@ -4291,8 +4296,9 @@ export function OfficeScreen({
   const taskManagerReady = useMemo(
     () =>
       selectedAdapterType === "custom" ||
+      taskBoard.gatewayTasksSupported === "supported" ||
       (taskManagerSkill ? deriveSkillReadinessState(taskManagerSkill) === "ready" : false),
-    [selectedAdapterType, taskManagerSkill],
+    [selectedAdapterType, taskBoard.gatewayTasksSupported, taskManagerSkill],
   );
   const soundclawReady = useMemo(
     () => (soundclawSkill ? deriveSkillReadinessState(soundclawSkill) === "ready" : false),
@@ -4551,7 +4557,8 @@ export function OfficeScreen({
           voiceRepliesVoiceId={voiceRepliesVoiceId}
           voiceRepliesSpeed={voiceRepliesSpeed}
           voiceRepliesLoaded={voiceRepliesLoaded}
-          voiceRepliesProvider={voiceRepliesPreference.provider}
+          voiceRepliesProvider={voiceRepliesProvider}
+          onVoiceRepliesProviderChange={setVoiceRepliesProvider}
           onOfficeTitleChange={setOfficeTitle}
           onRemoteOfficeEnabledChange={setRemoteOfficeEnabled}
           onRemoteOfficeSourceKindChange={setRemoteOfficeSourceKind}
@@ -4565,7 +4572,7 @@ export function OfficeScreen({
           onVoiceRepliesPreview={(voiceId, voiceName) => {
             void previewVoiceReply({
               text: `Hi, how can I help you? My name is ${voiceName}.`,
-              provider: voiceRepliesPreference.provider,
+              provider: voiceRepliesProvider,
               voiceId,
               speed: voiceRepliesSpeed,
             });

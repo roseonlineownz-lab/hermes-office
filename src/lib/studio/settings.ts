@@ -98,7 +98,7 @@ export type StudioAnalyticsPreferencePatch = {
   budgets?: Partial<StudioAnalyticsBudgetSettings>;
 };
 
-export type StudioVoiceRepliesProvider = "elevenlabs" | "vibevoice" | "kokoro";
+export type StudioVoiceRepliesProvider = "vibevoice" | "kokoro";
 
 export type StudioVoiceRepliesPreference = {
   enabled: boolean;
@@ -932,7 +932,7 @@ const normalizeVoiceRepliesProvider = (
   fallback: StudioVoiceRepliesProvider = "vibevoice"
 ): StudioVoiceRepliesProvider => {
   const provider = coerceString(value);
-  if (provider === "elevenlabs" || provider === "vibevoice" || provider === "kokoro") {
+  if (provider === "vibevoice" || provider === "kokoro") {
     return provider;
   }
   return fallback;

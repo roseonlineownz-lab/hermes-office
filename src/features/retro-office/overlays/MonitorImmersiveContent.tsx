@@ -13,6 +13,9 @@ type BrowserPreviewSnapshot = {
   capturedAt: number | null;
 };
 
+const normalizeTextError = (value: unknown): string =>
+  typeof value === "string" ? value.trim() : "";
+
 function useBrowserPreviewScreenshot(params: {
   browserUrl: string | null;
   enabled: boolean;
@@ -66,7 +69,10 @@ function useBrowserPreviewScreenshot(params: {
       };
 
       if (!response.ok) {
-        throw new Error(payload.error?.trim() || "Unable to capture browser preview.");
+        throw new Error(
+          normalizeTextError(payload.error) ||
+            "Unable to capture browser preview.",
+        );
       }
       if (requestIdRef.current !== requestId) return;
 

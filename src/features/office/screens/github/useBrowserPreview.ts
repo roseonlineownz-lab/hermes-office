@@ -9,6 +9,9 @@ type BrowserPreviewState = {
   error: string | null;
 };
 
+const normalizeTextError = (value: unknown): string =>
+  typeof value === "string" ? value.trim() : "";
+
 export function useBrowserPreview(url: string | null, enabled: boolean) {
   const [state, setState] = useState<BrowserPreviewState>({
     mediaUrl: null,
@@ -58,7 +61,8 @@ export function useBrowserPreview(url: string | null, enabled: boolean) {
         };
         if (!response.ok) {
           throw new Error(
-            payload.error?.trim() || "Unable to capture GitHub browser preview.",
+            normalizeTextError(payload.error) ||
+              "Unable to capture GitHub browser preview.",
           );
         }
         if (requestIdRef.current !== requestId) return;

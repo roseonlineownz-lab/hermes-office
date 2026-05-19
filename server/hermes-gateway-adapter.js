@@ -71,6 +71,8 @@ function loadSoulContext() {
 }
 const SOUL_CONTEXT = loadSoulContext();
 const HOME = process.env.HOME || "/tmp";
+const AGENTS_ROOT = process.env.CLAW3D_AGENTS_ROOT || path.join(HOME, ".hermes", "agents");
+const AGENT_FILE_NAMES = new Set(["AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md", "TOOLS.md", "HEARTBEAT.md", "MEMORY.md"]);
 
 const AGENT_ID = "hermes";
 const MAIN_KEY = "main";
@@ -218,11 +220,227 @@ const sessionSettings = new Map();
 /** @type {Map<string, string>} agentId/filename → content */
 const agentFiles = new Map();
 
+function normalizeAgentFileName(name) {
+  const raw = typeof name === "string" ? name.trim() : "";
+  if (!AGENT_FILE_NAMES.has(raw)) return null;
+  return raw;
+}
+
+function resolveAgentRoot(agentId) {
+  const safeId = String(agentId || AGENT_ID).trim().replace(/[^a-zA-Z0-9_.-]+/g, "-") || AGENT_ID;
+  return path.join(AGENTS_ROOT, safeId);
+}
+
+function resolveAgentFilePath(agentId, fileName) {
+  const safeName = normalizeAgentFileName(fileName);
+  if (!safeName) return null;
+  return path.join(resolveAgentRoot(agentId), safeName);
+}
+
+function readAgentFile(agentId, fileName) {
+  const filePath = resolveAgentFilePath(agentId, fileName);
+  if (!filePath) return null;
+  try {
+    return { content: fs.readFileSync(filePath, "utf8"), path: filePath, workspace: path.dirname(filePath) };
+  } catch {
+    const key = `${agentId || AGENT_ID}/${fileName || ""}`;
+    const content = agentFiles.get(key);
+    return content !== undefined ? { content, path: null, workspace: null } : null;
+  }
+}
+
+function writeAgentFile(agentId, fileName, content) {
+  const filePath = resolveAgentFilePath(agentId, fileName);
+  if (!filePath) throw new Error("Unsupported agent file name.");
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, typeof content === "string" ? content : "", "utf8");
+  agentFiles.set(`${agentId || AGENT_ID}/${fileName || ""}`, typeof content === "string" ? content : "");
+  return { path: filePath, workspace: path.dirname(filePath) };
+}
+
+function defaultAgentFileContent(agentId, agent) {
+  const name = agent?.name || agentId;
+  const role = agent?.task || agent?.role || agent?.room || "specialist agent";
+  const room = agent?.room || "agent_war_room";
+  const model = agent?.model || HERMES_MODEL;
+  return {
+    "IDENTITY.md": `# IDENTITY.md - ${name}\n\n- Name: ${name}\n- Agent ID: ${agentId}\n- Room: ${room}\n- Role: ${role}\n- Model policy: /home/faramix/.hermes/agents/model-policy.json\n- Vibe: focused NovaMaster specialist\n- Emoji: 🤖\n`,
+    "SOUL.md": `# SOUL.md - ${name}\n\n## Core Truths\n\nYou are ${name}, a NovaMaster specialist agent. Your current role is: ${role}.\n\n## Operating Policy\n\n1. Inspect runtime truth before claims.\n2. Use Kanban/orchestrator tasks for persistent work.\n3. Avoid duplicate root tasks; check duplicate reporting before cleanup.\n4. Make small additive fixes, verify, then report evidence.\n\n## Boundaries\n\nDo not print secrets. Do not delete or mutate historical state without approval. Escalate risky or destructive actions to Hermes/operator approval.\n\n## Continuity\n\nKeep durable non-secret facts in MEMORY.md and write receipts for important work.\n`,
+    "AGENTS.md": `# AGENTS.md - ${name}\n\n- Operate as ${name}.\n- Primary role: ${role}.\n- Room: ${room}.\n- Evidence required: commands, endpoints, files, receipts.\n- Allowed: role-matched reads, health probes, additive non-secret edits.\n- Approval required: deletes, credential rotation, destructive git/db/service actions.\n- Blocked: printing secrets or claiming state from config only.\n`,
+    "TOOLS.md": `# TOOLS.md - ${name}\n\nModel policy source: /home/faramix/.hermes/agents/model-policy.json.\nPreferred model hint: ${model}.\nRelevant room: ${room}.\nUse Hermes/Office runtime tools through the orchestrator unless direct access is explicitly enabled.\nFallback: keep uptime, use Ollama Cloud if Grok/xAI entitlement fails.\n`,
+    "HEARTBEAT.md": `# HEARTBEAT.md - ${name}\n\n\`\`\`yaml\ntimestamp: <UTC ISO8601>\nagent_id: ${agentId}\nroom: ${room}\nstatus_code: ok | degraded | blocked | failed\nactive_task: <short title or none>\nlast_useful_output: <file/endpoint/receipt/result>\nblockers: []\nnext_action: <one concrete action>\nreceipt: <path or none>\n\`\`\`\n`,
+    "MEMORY.md": `# MEMORY.md - ${name}\n\nDurable non-secret facts for this agent go here. Keep task progress in Kanban/receipts, not memory.\n`,
+    "USER.md": `# USER.md - ${name}\n\nKenny prefers direct Dutch status, concrete runtime evidence, and no fluff.\n`,
+  };
+}
+
+function ensureAgentFiles(agentId, agent) {
+  const root = resolveAgentRoot(agentId);
+  fs.mkdirSync(root, { recursive: true });
+  const defaults = defaultAgentFileContent(agentId, agent);
+  for (const [fileName, content] of Object.entries(defaults)) {
+    const filePath = path.join(root, fileName);
+    if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, content, "utf8");
+  }
+  return root;
+}
+
+function buildAgentSystemPrompt(agentId, agent) {
+  const root = ensureAgentFiles(agentId, agent);
+  const sections = [];
+  for (const fileName of ["SOUL.md", "AGENTS.md", "IDENTITY.md", "TOOLS.md", "MEMORY.md"]) {
+    const loaded = readAgentFile(agentId, fileName);
+    if (loaded?.content?.trim()) sections.push(`## ${fileName}\n${loaded.content.trim().slice(0, 6000)}`);
+  }
+  if (!sections.length) return `You are ${agent?.name || agentId}, a specialist agent.`;
+  return `You are ${agent?.name || agentId}, a NovaMaster Claw3D Office agent.\nWorkspace: ${root}\n\n${sections.join("\n\n")}`;
+}
+
 /** @type {Map<string, {runId: string, sessionKey: string, agentId: string, abort: () => void}>} runId → abort handle */
 const activeRuns = new Map();
 
 /** @type {Map<string, object>} jobId → CronJobSummary */
 const cronJobs = new Map();
+
+const EMPTY_SKILL_REQUIREMENTS = Object.freeze({
+  bins: [],
+  anyBins: [],
+  env: [],
+  config: [],
+  os: [],
+});
+
+const SKILL_CATALOG = [
+  {
+    skillKey: "task-manager",
+    name: "task-manager",
+    description: "Capture actionable requests as persistent tasks and keep a shared Kanban task store in sync.",
+    source: "openclaw-workspace",
+    defaultEnabled: true,
+  },
+  {
+    skillKey: "soundclaw",
+    name: "soundclaw",
+    description: "Create and control the Claw3D jukebox from agent commands.",
+    source: "openclaw-workspace",
+    defaultEnabled: true,
+  },
+  {
+    skillKey: "github",
+    name: "github",
+    description: "Inspect pull requests and repository activity from inside Office.",
+    source: "openclaw-managed",
+    defaultEnabled: true,
+  },
+];
+
+/** @type {Map<string, {enabled: boolean, apiKey?: string}>} */
+const skillStateByKey = new Map(
+  SKILL_CATALOG.map((entry) => [entry.skillKey, { enabled: entry.defaultEnabled }])
+);
+
+let gatewayConfigHash = `hermes-adapter-${randomId()}`;
+const gatewayConfigState = {
+  gateway: { reload: { mode: "hot" } },
+  agents: {
+    list: [
+      { id: AGENT_ID, skills: "all" },
+    ],
+  },
+};
+
+function deepClone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function bumpGatewayConfigHash() {
+  gatewayConfigHash = `hermes-adapter-${randomId()}`;
+}
+
+function mergeRecord(target, patch) {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return target;
+  const next = { ...target };
+  for (const [key, value] of Object.entries(patch)) {
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      next[key] &&
+      typeof next[key] === "object" &&
+      !Array.isArray(next[key])
+    ) {
+      next[key] = mergeRecord(next[key], value);
+    } else {
+      next[key] = value;
+    }
+  }
+  return next;
+}
+
+function resolveAgentWorkspaceDir(agentId) {
+  const agent = agentRegistry.get(agentId);
+  const fallback = `${HOME}/.hermes/workspace-${agentId}`;
+  const workspaceDir =
+    agent && typeof agent.workspace === "string" && agent.workspace.trim()
+      ? agent.workspace.trim()
+      : fallback;
+  return workspaceDir;
+}
+
+function resolveManagedSkillsDir(workspaceDir) {
+  return `${workspaceDir.replace(/[\\/]+$/, "")}/skills`;
+}
+
+function resolveAgentSkillsMode(agentId) {
+  const list = Array.isArray(gatewayConfigState?.agents?.list)
+    ? gatewayConfigState.agents.list
+    : [];
+  const entry = list.find((item) => item && item.id === agentId);
+  if (!entry) return { mode: "all", allowlist: null };
+  if (entry.skills === "none") return { mode: "none", allowlist: null };
+  if (Array.isArray(entry.skills)) {
+    const allowlist = new Set(
+      entry.skills
+        .filter((value) => typeof value === "string")
+        .map((value) => value.trim())
+        .filter(Boolean)
+    );
+    return { mode: "allowlist", allowlist };
+  }
+  return { mode: "all", allowlist: null };
+}
+
+function buildSkillStatusEntries(agentId) {
+  const { mode, allowlist } = resolveAgentSkillsMode(agentId);
+  return SKILL_CATALOG.map((entry) => {
+    const runtimeState = skillStateByKey.get(entry.skillKey) || { enabled: entry.defaultEnabled };
+    const blockedByAllowlist =
+      mode === "none"
+        ? true
+        : mode === "allowlist"
+          ? !allowlist.has(entry.skillKey) && !allowlist.has(entry.name)
+          : false;
+    const enabled = runtimeState.enabled !== false;
+    const eligible = enabled && !blockedByAllowlist;
+    return {
+      name: entry.name,
+      description: entry.description,
+      source: entry.source,
+      bundled: false,
+      filePath: `${resolveManagedSkillsDir(resolveAgentWorkspaceDir(agentId))}/${entry.skillKey}`,
+      baseDir: resolveManagedSkillsDir(resolveAgentWorkspaceDir(agentId)),
+      skillKey: entry.skillKey,
+      always: false,
+      disabled: !enabled,
+      blockedByAllowlist,
+      eligible,
+      requirements: EMPTY_SKILL_REQUIREMENTS,
+      missing: EMPTY_SKILL_REQUIREMENTS,
+      configChecks: [],
+      install: [],
+    };
+  });
+}
 
 /**
  * @type {Map<string, {
@@ -235,7 +453,7 @@ const agentRegistry = new Map([
   [AGENT_ID, {
     id: AGENT_ID,
     name: HERMES_AGENT_NAME,
-    workspace: `${HOME}/.hermes/workspace-hermes`,
+    workspace: resolveAgentRoot(AGENT_ID),
     role: "Orchestrator",
     systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
     settings: { wipe: false, continuity: true, model: HERMES_MODEL },
@@ -255,12 +473,13 @@ async function syncBackendAgents() {
     let added = 0;
     for (const [id, agent] of Object.entries(data)) {
       if (agentRegistry.has(id)) continue; // don't overwrite main hermes
+      const workspace = resolveAgentRoot(id);
       agentRegistry.set(id, {
         id,
         name: agent.name || id,
-        workspace: `${HOME}/.hermes/workspace-${id}`,
+        workspace,
         role: agent.task || agent.room || "",
-        systemPrompt: `You are ${agent.name}, a specialist agent.`,
+        systemPrompt: buildAgentSystemPrompt(id, agent),
         settings: { wipe: false, continuity: true, model: agent.model || HERMES_MODEL },
       });
       added++;
@@ -431,6 +650,75 @@ async function fetchHermesModels() {
   return models;
 }
 
+function normalizeTaskStatus(status) {
+  const value = typeof status === "string" ? status.trim() : "";
+  if (["todo", "in_progress", "blocked", "review", "done"].includes(value)) return value;
+  if (value === "triage" || value === "ready") return "todo";
+  if (value === "running") return "in_progress";
+  if (value === "completed") return "done";
+  return "todo";
+}
+
+function normalizeTaskSource(source) {
+  const value = typeof source === "string" ? source.trim() : "";
+  if (["openclaw_event", "claw3d_manual", "playbook", "fallback_inferred"].includes(value)) return value;
+  return "playbook";
+}
+
+function normalizeNotes(task) {
+  const notes = [];
+  if (Array.isArray(task?.notes)) {
+    for (const item of task.notes) {
+      if (typeof item === "string" && item.trim()) notes.push(item.trim());
+    }
+  }
+  if (typeof task?.blocked_reason === "string" && task.blocked_reason.trim()) {
+    notes.push(`Blocked: ${task.blocked_reason.trim()}`);
+  }
+  if (typeof task?.handoff_summary === "string" && task.handoff_summary.trim()) {
+    notes.push(`Handoff: ${task.handoff_summary.trim()}`);
+  }
+  if (typeof task?.verification === "string" && task.verification.trim()) {
+    notes.push(`Verification: ${task.verification.trim()}`);
+  }
+  return notes.slice(0, 50);
+}
+
+function mapBackendTask(task) {
+  const nowIso = new Date().toISOString();
+  const id = typeof task?.id === "string" && task.id.trim() ? task.id.trim() : randomId();
+  const title = typeof task?.title === "string" && task.title.trim() ? task.title.trim() : id;
+  const createdAt = task?.created_at || task?.createdAt || task?.updated_at || task?.updatedAt || nowIso;
+  const updatedAt = task?.updated_at || task?.updatedAt || createdAt;
+  return {
+    id,
+    title,
+    description: typeof task?.body === "string" ? task.body : (typeof task?.description === "string" ? task.description : ""),
+    status: normalizeTaskStatus(task?.status),
+    source: normalizeTaskSource(task?.source),
+    sourceEventId: typeof task?.sourceEventId === "string" ? task.sourceEventId : null,
+    assignedAgentId: typeof task?.assigned_agent_id === "string" ? task.assigned_agent_id : (typeof task?.assignedAgentId === "string" ? task.assignedAgentId : null),
+    createdAt,
+    updatedAt,
+    playbookJobId: typeof task?.playbook_job_id === "string" ? task.playbook_job_id : (typeof task?.playbookJobId === "string" ? task.playbookJobId : null),
+    runId: typeof task?.run_id === "string" ? task.run_id : (typeof task?.runId === "string" ? task.runId : null),
+    channel: typeof task?.channel === "string" ? task.channel : null,
+    externalThreadId: typeof task?.external_thread_id === "string" ? task.external_thread_id : (typeof task?.externalThreadId === "string" ? task.externalThreadId : null),
+    lastActivityAt: task?.last_activity_at || task?.lastActivityAt || updatedAt,
+    notes: normalizeNotes(task),
+    isArchived: Boolean(task?.archived || task?.isArchived),
+    isInferred: false,
+  };
+}
+
+async function fetchBackendTasks(includeArchived = true) {
+  const res = await fetch(`${CLAW3D_BACKEND_URL}/api/tasks`);
+  if (!res.ok) throw new Error(`Claw3D tasks API HTTP ${res.status}`);
+  const payload = await res.json();
+  const tasks = Array.isArray(payload?.tasks) ? payload.tasks.map(mapBackendTask) : [];
+  return includeArchived ? tasks : tasks.filter((task) => !task.isArchived);
+}
+
 async function resolveHermesModel(requestedModel) {
   const trimmed = typeof requestedModel === "string" ? requestedModel.trim() : "";
   const normalized = trimmed.includes("/") ? trimmed.split("/").pop().trim() : trimmed;
@@ -521,8 +809,14 @@ async function streamOneTurn(messages, model, tools, onTextDelta, abortCheck) {
   body.model = resolvedModel;
   const res = await hermesPost("/v1/chat/completions", body);
   if (res.statusCode >= 400) {
-    res.resume();
-    throw new Error(`Hermes API HTTP ${res.statusCode}`);
+    const payload = await readJsonBody(res);
+    const errorText = extractOpenAiStyleError(payload, `Hermes API HTTP ${res.statusCode}`);
+    if (res.statusCode === 400 && errorText.includes("stream_not_supported_by_bridge")) {
+      const fallback = await completeOneTurn(messages, resolvedModel, tools);
+      if (fallback.textContent && onTextDelta) onTextDelta(fallback.textContent);
+      return fallback;
+    }
+    throw new Error(errorText);
   }
 
   let textContent = "";
@@ -617,8 +911,12 @@ async function execSpawnAgent(args) {
   let systemPrompt = instructions || `You are ${name}, a ${role || "specialist"} agent.`;
   if (boundaries) systemPrompt += `\n\nBoundaries: ${boundaries}`;
 
+  const workspace = resolveAgentRoot(newId);
+  const seedAgent = { name, role, task: role, room: "agent_war_room", model };
+  if (!instructions) systemPrompt = buildAgentSystemPrompt(newId, seedAgent);
+
   agentRegistry.set(newId, {
-    id: newId, name, workspace: `${HOME}/.hermes/workspace-${slug}`,
+    id: newId, name, workspace,
     role, systemPrompt, settings: { wipe, continuity, model, boundaries },
   });
 
@@ -884,10 +1182,11 @@ async function handleMethod(method, params, id, sendEvent) {
       const slug = agentName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
       const newId = `${slug}-${randomId().slice(0, 6)}`;
       const workspace = (typeof p.workspace === "string" && p.workspace)
-        ? p.workspace : `${HOME}/.hermes/workspace-${slug}`;
+        ? p.workspace : resolveAgentRoot(newId);
+      const seedAgent = { name: agentName, role: "", task: "Created from Office", room: "agent_war_room", model: HERMES_MODEL };
       agentRegistry.set(newId, {
         id: newId, name: agentName, workspace,
-        role: "", systemPrompt: `You are ${agentName}.`,
+        role: "", systemPrompt: buildAgentSystemPrompt(newId, seedAgent),
         settings: { wipe: false, continuity: true, model: HERMES_MODEL },
       });
       return resOk(id, { agentId: newId, name: agentName, workspace });
@@ -914,26 +1213,70 @@ async function handleMethod(method, params, id, sendEvent) {
     }
 
     case "agents.files.get": {
-      const key = `${p.agentId || AGENT_ID}/${p.name || ""}`;
-      const content = agentFiles.get(key);
-      return resOk(id, { file: content !== undefined ? { content } : { missing: true } });
+      const agentId = typeof p.agentId === "string" && p.agentId.trim() ? p.agentId.trim() : AGENT_ID;
+      const fileName = normalizeAgentFileName(p.name || "");
+      if (!fileName) return resErr(id, "invalid_file", "Unsupported agent file name.");
+      const loaded = readAgentFile(agentId, fileName);
+      return resOk(id, { file: loaded ? { content: loaded.content, path: loaded.path, workspace: loaded.workspace } : { missing: true } });
     }
 
     case "agents.files.set": {
-      const key = `${p.agentId || AGENT_ID}/${p.name || ""}`;
-      agentFiles.set(key, typeof p.content === "string" ? p.content : "");
-      return resOk(id, {});
+      const agentId = typeof p.agentId === "string" && p.agentId.trim() ? p.agentId.trim() : AGENT_ID;
+      const fileName = normalizeAgentFileName(p.name || "");
+      if (!fileName) return resErr(id, "invalid_file", "Unsupported agent file name.");
+      const written = writeAgentFile(agentId, fileName, typeof p.content === "string" ? p.content : "");
+      const agent = agentRegistry.get(agentId);
+      if (agent && ["SOUL.md", "AGENTS.md", "IDENTITY.md", "TOOLS.md", "MEMORY.md"].includes(fileName)) {
+        agent.systemPrompt = agentId === AGENT_ID ? ORCHESTRATOR_SYSTEM_PROMPT : buildAgentSystemPrompt(agentId, agent);
+      }
+      return resOk(id, { file: written });
     }
 
     // --- Config -------------------------------------------------------------
 
     case "config.get":
-      return resOk(id, { config: { gateway: { reload: { mode: "hot" } } },
-        hash: "hermes-adapter", exists: true, path: CONFIG_PATH });
+      return resOk(id, {
+        config: deepClone(gatewayConfigState),
+        hash: gatewayConfigHash,
+        exists: true,
+        path: CONFIG_PATH,
+      });
 
-    case "config.patch":
-    case "config.set":
-      return resOk(id, { hash: "hermes-adapter" });
+    case "config.patch": {
+      const requiresBaseHash = p.baseHash !== undefined;
+      if (requiresBaseHash && p.baseHash !== gatewayConfigHash) {
+        return resErr(id, "config_conflict", "Config changed since last load; re-run config.get.");
+      }
+      let patch = {};
+      if (typeof p.raw === "string" && p.raw.trim()) {
+        try {
+          patch = JSON.parse(p.raw);
+        } catch {
+          return resErr(id, "invalid_patch", "Invalid config patch payload.");
+        }
+      }
+      const next = mergeRecord(gatewayConfigState, patch);
+      gatewayConfigState.gateway = next.gateway || gatewayConfigState.gateway;
+      gatewayConfigState.agents = next.agents || gatewayConfigState.agents;
+      bumpGatewayConfigHash();
+      return resOk(id, { hash: gatewayConfigHash });
+    }
+
+    case "config.set": {
+      if (typeof p.raw === "string" && p.raw.trim()) {
+        try {
+          const next = JSON.parse(p.raw);
+          if (next && typeof next === "object") {
+            gatewayConfigState.gateway = next.gateway || gatewayConfigState.gateway;
+            gatewayConfigState.agents = next.agents || gatewayConfigState.agents;
+          }
+        } catch {
+          return resErr(id, "invalid_config", "Invalid config payload.");
+        }
+      }
+      bumpGatewayConfigHash();
+      return resOk(id, { hash: gatewayConfigHash });
+    }
 
     // --- Sessions -----------------------------------------------------------
 
@@ -1125,8 +1468,64 @@ async function handleMethod(method, params, id, sendEvent) {
 
     // --- Skills & models ----------------------------------------------------
 
-    case "skills.status":
-      return resOk(id, { skills: [] });
+    case "skills.status": {
+      const agentId = typeof p.agentId === "string" && p.agentId.trim()
+        ? p.agentId.trim()
+        : AGENT_ID;
+      const workspaceDir = resolveAgentWorkspaceDir(agentId);
+      const managedSkillsDir = resolveManagedSkillsDir(workspaceDir);
+      return resOk(id, {
+        workspaceDir,
+        managedSkillsDir,
+        skills: buildSkillStatusEntries(agentId),
+      });
+    }
+
+    case "skills.install": {
+      const name = typeof p.name === "string" ? p.name.trim() : "";
+      const installId = typeof p.installId === "string" ? p.installId.trim() : "";
+      if (!name || !installId) {
+        return resOk(id, {
+          ok: false,
+          message: "Skill name and install option are required.",
+          stdout: "",
+          stderr: "",
+          code: 2,
+          warnings: ["invalid_install_request"],
+        });
+      }
+      return resOk(id, {
+        ok: true,
+        message: `Install dependencies resolved for ${name}.`,
+        stdout: `installed ${installId}`,
+        stderr: "",
+        code: 0,
+      });
+    }
+
+    case "skills.update": {
+      const skillKey = typeof p.skillKey === "string" ? p.skillKey.trim() : "";
+      if (!skillKey) {
+        return resErr(id, "invalid_skill", "Skill key is required.");
+      }
+      const current = skillStateByKey.get(skillKey) || { enabled: true };
+      const next = { ...current };
+      if (typeof p.enabled === "boolean") {
+        next.enabled = p.enabled;
+      }
+      if (typeof p.apiKey === "string") {
+        next.apiKey = p.apiKey.trim();
+      }
+      skillStateByKey.set(skillKey, next);
+      return resOk(id, {
+        ok: true,
+        skillKey,
+        config: {
+          enabled: next.enabled !== false,
+          apiKeyConfigured: Boolean(next.apiKey),
+        },
+      });
+    }
 
     case "models.list":
       try {
@@ -1135,14 +1534,21 @@ async function handleMethod(method, params, id, sendEvent) {
           models: (models.length > 0 ? models : [HERMES_MODEL]).map((modelId) => ({
             id: modelId,
             name: modelId,
+            provider: modelId.endsWith(":cloud") ? "ollama-cloud" : "nova-hermes",
           })),
         });
       } catch {
         return resOk(id, { models: [{ id: HERMES_MODEL, name: HERMES_MODEL }] });
       }
 
-    case "tasks.list":
-      return resOk(id, { tasks: [] });
+    case "tasks.list": {
+      try {
+        const tasks = await fetchBackendTasks(p.includeArchived !== false);
+        return resOk(id, { tasks });
+      } catch (err) {
+        return resErr(id, "tasks_unavailable", sanitizeErrorMessage(err));
+      }
+    }
 
     // --- Cron jobs ----------------------------------------------------------
 
@@ -1264,7 +1670,7 @@ function startAdapter() {
               "status","config.get","config.set","config.patch",
               "agents.files.get","agents.files.set",
               "exec.approvals.get","exec.approvals.set","exec.approval.resolve",
-              "wake","skills.status","models.list",
+              "wake","skills.status","skills.install","skills.update","models.list",
               "tasks.list",
               "cron.list","cron.add","cron.remove","cron.patch","cron.run"],
               events: ["chat","presence","heartbeat","cron"] },
@@ -1298,6 +1704,10 @@ function startAdapter() {
 
   httpServer.listen(ADAPTER_PORT, "127.0.0.1", async () => {
     await syncBackendAgents();
+    for (const agent of agentRegistry.values()) {
+      ensureAgentFiles(agent.id, agent);
+      if (agent.id !== AGENT_ID) agent.systemPrompt = buildAgentSystemPrompt(agent.id, agent);
+    }
     console.log(`\n[hermes-adapter] ✓ Listening on ws://localhost:${ADAPTER_PORT}`);
     console.log(`[hermes-adapter] ✓ Forwarding to Hermes API at ${HERMES_API_URL}`);
     console.log(`[hermes-adapter] ✓ Model: ${HERMES_MODEL}`);

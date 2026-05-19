@@ -43,6 +43,9 @@ type GithubImmersiveScreenProps = {
   onOpenSetup?: () => void;
 };
 
+const normalizeTextError = (value: unknown): string =>
+  typeof value === "string" ? value.trim() : "";
+
 export function GithubImmersiveScreen({
   agentName,
   githubSkill = null,

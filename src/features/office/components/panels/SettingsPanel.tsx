@@ -35,7 +35,8 @@ type SettingsPanelProps = {
   voiceRepliesVoiceId: string | null;
   voiceRepliesSpeed: number;
   voiceRepliesLoaded: boolean;
-  voiceRepliesProvider?: "elevenlabs" | "vibevoice" | "kokoro";
+  voiceRepliesProvider?: "vibevoice" | "kokoro";
+  onVoiceRepliesProviderChange?: (provider: "vibevoice" | "kokoro") => void;
   onVoiceRepliesToggle: (enabled: boolean) => void;
   onVoiceRepliesVoiceChange: (voiceId: string | null) => void;
   onVoiceRepliesSpeedChange: (speed: number) => void;
@@ -74,6 +75,7 @@ export function SettingsPanel({
   voiceRepliesSpeed,
   voiceRepliesLoaded,
   voiceRepliesProvider = "vibevoice",
+  onVoiceRepliesProviderChange,
   onVoiceRepliesToggle,
   onVoiceRepliesVoiceChange,
   onVoiceRepliesSpeedChange,
@@ -422,7 +424,8 @@ export function SettingsPanel({
           </button>
         </div>
       </div>
-      <div className="ui-settings-row mt-3 flex min-h-[72px] items-center justify-between gap-6 rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
+      <div className="ui-settings-row relative mt-3 flex min-h-[72px] items-center justify-between gap-6 overflow-hidden rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_75%_20%,rgba(34,211,238,0.12),transparent_55%)]" />
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -443,8 +446,44 @@ export function SettingsPanel({
           </div>
         </div>
         <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-cyan-200/70">
-          {voiceRepliesLoaded ? (voiceRepliesEnabled ? "On" : "Off") : "Loading"}
+          {voiceRepliesLoaded ? (voiceRepliesEnabled ? "Live" : "Muted") : "Loading"}
         </span>
+      </div>
+      <div className="mt-3 rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[11px] font-medium text-white">Voice Engine</div>
+            <div className="mt-1 text-[10px] text-white/75">
+              Select the synthesis backend for Office replies.
+            </div>
+          </div>
+          <span className="rounded-full border border-cyan-400/35 bg-cyan-500/10 px-2 py-1 font-mono text-[9px] uppercase tracking-[0.16em] text-cyan-100/90">
+            {voiceRepliesProvider}
+          </span>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {([
+            { id: "vibevoice", label: "VibeVoice" },
+            { id: "kokoro", label: "Kokoro" },
+          ] as const).map((provider) => {
+            const selected = provider.id === voiceRepliesProvider;
+            return (
+              <button
+                key={provider.id}
+                type="button"
+                onClick={() => onVoiceRepliesProviderChange?.(provider.id)}
+                disabled={!voiceRepliesLoaded}
+                className={`rounded-lg border px-3 py-2 text-center text-[11px] transition-colors ${
+                  selected
+                    ? "border-cyan-300/60 bg-cyan-500/20 text-white shadow-[0_0_0_1px_rgba(34,211,238,0.35)]"
+                    : "border-cyan-500/10 bg-black/15 text-white/80 hover:border-cyan-400/20 hover:bg-cyan-500/6"
+                }`}
+              >
+                {provider.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
       <div className="mt-3 rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
         <div className="text-[11px] font-medium text-white">Voice</div>
@@ -465,7 +504,7 @@ export function SettingsPanel({
                 disabled={!voiceRepliesLoaded}
                 className={`rounded-lg border px-3 py-2 text-left transition-colors ${
                   selected
-                    ? "border-cyan-400/40 bg-cyan-500/12 text-white"
+                    ? "border-cyan-300/60 bg-cyan-500/20 text-white shadow-[0_0_0_1px_rgba(34,211,238,0.35)]"
                     : "border-cyan-500/10 bg-black/15 text-white/80 hover:border-cyan-400/20 hover:bg-cyan-500/6"
                 }`}
               >

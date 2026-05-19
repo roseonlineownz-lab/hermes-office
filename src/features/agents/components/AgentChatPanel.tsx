@@ -20,6 +20,7 @@ import { rewriteMediaLinesToMarkdown } from "@/lib/text/media-markdown";
 import { normalizeAssistantDisplayText } from "@/lib/text/assistantText";
 import { isNearBottom } from "@/lib/dom";
 import { useVoiceRecorder, type VoiceRecorderState, type VoiceSendPayload } from "@/hooks/useVoiceRecorder";
+import { useVoiceReplyPlayback } from "@/hooks/useVoiceReplyPlayback";
 import { AgentAvatar } from "./AgentAvatar";
 import type {
   ExecApprovalDecision,
@@ -1244,6 +1245,11 @@ export const AgentChatPanel = ({
     onVoiceSend,
   });
 
+  const { enqueue } = useVoiceReplyPlayback({ enabled: true, provider: "vibevoice" });
+  const voicedAssistantItemsRef = useRef<Set<string>>(new Set());
+  const voiceSessionRef = useRef<string>(agent.sessionKey);
+  const voiceHistoryPrimedRef = useRef(false);
+
   const resizeDraft = useCallback(() => {
     const el = draftRef.current;
     if (!el) return;
@@ -1333,6 +1339,37 @@ export const AgentChatPanel = ({
       }),
     [agent.outputLines, agent.showThinkingTraces, agent.toolCallingEnabled]
   );
+
+  useEffect(() => {
+    if (voiceSessionRef.current !== agent.sessionKey) {
+      voiceSessionRef.current = agent.sessionKey;
+      voicedAssistantItemsRef.current = new Set();
+      voiceHistoryPrimedRef.current = false;
+    }
+
+    const assistantItems = chatItems.filter(
+      (item): item is Extract<AgentChatItem, { kind: "assistant" }> => item.kind === "assistant" && !item.live
+    );
+
+    if (!voiceHistoryPrimedRef.current) {
+      for (const item of assistantItems) {
+        const signature = `${item.timestampMs ?? "no-ts"}:${item.text}`;
+        voicedAssistantItemsRef.current.add(signature);
+      }
+      voiceHistoryPrimedRef.current = true;
+      return;
+    }
+
+    for (const item of assistantItems) {
+      const text = item.text.trim();
+      if (!text) continue;
+      const signature = `${item.timestampMs ?? "no-ts"}:${text}`;
+      if (voicedAssistantItemsRef.current.has(signature)) continue;
+      voicedAssistantItemsRef.current.add(signature);
+      enqueue({ text });
+    }
+  }, [agent.sessionKey, chatItems, enqueue]);
+
   const running = agent.status === "running";
   const renderBlocks = useMemo(() => buildAgentChatRenderBlocks(chatItems), [chatItems]);
   const hasActiveStreamingTailInTranscript =
