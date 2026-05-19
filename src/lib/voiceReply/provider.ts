@@ -122,12 +122,9 @@ export const synthesizeVoiceReply = async (
       }
     } catch (error) {
       if (error instanceof Error) {
-        if (isNonEmptyString(request.provider)) {
-          throw error;
-        }
-        errors.push(error.message);
+        errors.push(`${provider}: ${error.message}`);
       } else {
-        errors.push("Unknown voice provider error.");
+        errors.push(`${provider}: Unknown voice provider error.`);
       }
     }
   }
