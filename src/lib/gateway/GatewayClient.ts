@@ -22,6 +22,10 @@ import { resolveStudioProxyGatewayUrl } from "@/lib/gateway/proxy-url";
 import { ensureGatewayReloadModeHotForLocalStudio } from "@/lib/gateway/gatewayReloadMode";
 import { isLocalGatewayUrl } from "@/lib/gateway/local-gateway";
 import { GatewayResponseError } from "@/lib/gateway/errors";
+import {
+  acquireGatewayClient as acquireSharedGatewayClient,
+  releaseGatewayClient as releaseSharedGatewayClient,
+} from "@/lib/gateway/gatewaySingleton";
 
 const gatewayDebugEnabled = process.env.NODE_ENV !== "production";
 
@@ -121,7 +125,7 @@ const INITIAL_CONNECT_RETRY_DELAY_MS = 1_200;
 const OPENCLAW_CONTROL_UI_CLIENT_ID = "openclaw-control-ui";
 const OPENCLAW_WEBCHAT_UI_CLIENT_ID = "webchat-ui";
 
-const isAutoManagedAdapter = (_adapterType: StudioGatewayAdapterType) => true;
+const isAutoManagedAdapter = (adapterType: StudioGatewayAdapterType) => adapterType !== "custom";
 
 export const resolveGatewayClientName = (
   adapterType: StudioGatewayAdapterType,
@@ -699,7 +703,16 @@ export const resolveGatewayAutoRetryDelayMs = (params: {
 export const useGatewayConnection = (
   settingsCoordinator: StudioSettingsCoordinatorLike
 ): GatewayConnectionState => {
-  const [client] = useState(() => new GatewayClient());
+  const [client] = useState(() =>
+    acquireSharedGatewayClient(
+      () => new GatewayClient(),
+      {
+        dispose: (sharedClient) => {
+          sharedClient.disconnect();
+        },
+      }
+    )
+  );
   const didAutoConnect = useRef(false);
   const hasConnectedOnceRef = useRef(false);
   const loadedGatewaySettings = useRef<{
@@ -921,7 +934,7 @@ export const useGatewayConnection = (
         clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
       }
-      client.disconnect();
+      releaseSharedGatewayClient();
     };
   }, [client]);
 

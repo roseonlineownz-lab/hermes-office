@@ -425,6 +425,7 @@ export class GatewayBrowserClient {
   private connectNonce: string | null = null;
   private connectSent = false;
   private connectTimer: number | null = null;
+  private reconnectTimer: number | null = null;
   private backoffMs = 800;
 
   constructor(private opts: GatewayBrowserClientOptions) {}
@@ -444,6 +445,14 @@ export class GatewayBrowserClient {
   stop() {
     this.closed = true;
     gatewayBrowserDebugLog("stop");
+    if (this.connectTimer !== null) {
+      window.clearTimeout(this.connectTimer);
+      this.connectTimer = null;
+    }
+    if (this.reconnectTimer !== null) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.ws?.close();
     this.ws = null;
     this.flushPending(new Error("gateway client stopped"));
@@ -477,10 +486,14 @@ export class GatewayBrowserClient {
 
   private scheduleReconnect() {
     if (this.closed) return;
+    if (this.reconnectTimer !== null) return;
     const delay = this.backoffMs;
     this.backoffMs = Math.min(this.backoffMs * 1.7, 15_000);
     gatewayBrowserDebugLog("schedule-reconnect", { delay });
-    window.setTimeout(() => this.connect(), delay);
+    this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, delay);
   }
 
   private flushPending(err: Error) {
