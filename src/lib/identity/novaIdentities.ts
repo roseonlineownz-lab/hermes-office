@@ -14,6 +14,7 @@ export type NovaIdentity = {
   id: NovaIdentityId;
   label: string;
   aliases: string[];
+  hermesProfiles: string[];
   pet: string;
   voiceProfile: string;
   claw3dAvatar: string;
@@ -27,7 +28,8 @@ export const NOVA_IDENTITIES: Record<NovaIdentityId, NovaIdentity> = {
   hermes: {
     id: "hermes",
     label: "Hermes",
-    aliases: ["hermes", "hermes-gateway", "hermes-office", "office-adapter", "codex", "orchestrator", "planner"],
+    aliases: ["architect", "codex", "default", "hermes", "hermes-gateway", "hermes-office", "office-adapter", "orchestrator", "planner"],
+    hermesProfiles: ["default", "architect"],
     pet: "hermes-trismegistus",
     voiceProfile: "hermes",
     claw3dAvatar: "orchestrator",
@@ -39,7 +41,8 @@ export const NOVA_IDENTITIES: Record<NovaIdentityId, NovaIdentity> = {
   openclaw: {
     id: "openclaw",
     label: "OpenClaw",
-    aliases: ["openclaw", "goclaw", "metaclaw", "clawmem", "claw"],
+    aliases: ["claw", "clawmem", "goclaw", "memory", "memory-profile", "metaclaw", "openclaw"],
+    hermesProfiles: ["memory"],
     pet: "openclaw",
     voiceProfile: "openclaw",
     claw3dAvatar: "runtime-claw",
@@ -52,6 +55,7 @@ export const NOVA_IDENTITIES: Record<NovaIdentityId, NovaIdentity> = {
     id: "office",
     label: "Claw3D Office",
     aliases: ["office", "claw3d", "studio", "cockpit"],
+    hermesProfiles: [],
     pet: "cartman",
     voiceProfile: "office",
     claw3dAvatar: "office-host",
@@ -64,6 +68,7 @@ export const NOVA_IDENTITIES: Record<NovaIdentityId, NovaIdentity> = {
     id: "jarvis",
     label: "Jarvis",
     aliases: ["jarvis", "mark", "mark-xxx", "aion", "core", "command"],
+    hermesProfiles: [],
     pet: "alien-x-pet",
     voiceProfile: "jarvis",
     claw3dAvatar: "core-console",
@@ -75,7 +80,8 @@ export const NOVA_IDENTITIES: Record<NovaIdentityId, NovaIdentity> = {
   qa: {
     id: "qa",
     label: "QA",
-    aliases: ["qa", "test", "tester", "testing", "smoke", "typecheck", "review", "coder", "code"],
+    aliases: ["code", "coder", "developer", "qa", "review", "reviewer", "smoke", "test", "tester", "testing", "typecheck"],
+    hermesProfiles: ["developer", "reviewer", "tester"],
     pet: "acidling",
     voiceProfile: "qa",
     claw3dAvatar: "qa-desk",
@@ -87,7 +93,8 @@ export const NOVA_IDENTITIES: Record<NovaIdentityId, NovaIdentity> = {
   scout: {
     id: "scout",
     label: "Scout / LeadGen",
-    aliases: ["leadgen", "lead", "sales", "outreach", "scout", "research"],
+    aliases: ["lead", "leadgen", "outreach", "research", "researcher", "sales", "scout"],
+    hermesProfiles: ["researcher"],
     pet: "wisp",
     voiceProfile: "leadgen",
     claw3dAvatar: "scout-desk",
@@ -100,6 +107,7 @@ export const NOVA_IDENTITIES: Record<NovaIdentityId, NovaIdentity> = {
     id: "media",
     label: "Media / LiveKit",
     aliases: ["media", "publisher", "publish", "viral", "video", "voice", "livekit", "soundclaw"],
+    hermesProfiles: [],
     pet: "null-wisp",
     voiceProfile: "media",
     claw3dAvatar: "media-studio",
@@ -112,6 +120,7 @@ export const NOVA_IDENTITIES: Record<NovaIdentityId, NovaIdentity> = {
     id: "publisher",
     label: "Publisher",
     aliases: ["publisher", "publish", "content", "post"],
+    hermesProfiles: [],
     pet: "bitty",
     voiceProfile: "media",
     claw3dAvatar: "publisher-desk",
@@ -124,6 +133,7 @@ export const NOVA_IDENTITIES: Record<NovaIdentityId, NovaIdentity> = {
     id: "freebuff",
     label: "Freebuff / Gordon",
     aliases: ["freebuff", "gordon", "remote", "windows", "win32"],
+    hermesProfiles: [],
     pet: "buff-patrick",
     voiceProfile: "freebuff",
     claw3dAvatar: "windows-remote",
@@ -135,7 +145,8 @@ export const NOVA_IDENTITIES: Record<NovaIdentityId, NovaIdentity> = {
   ops: {
     id: "ops",
     label: "VPS / Ops Guard",
-    aliases: ["vps", "ops", "security", "firewall", "server", "error", "incident"],
+    aliases: ["devops", "error", "firewall", "incident", "ops", "security", "server", "vps"],
+    hermesProfiles: ["devops"],
     pet: "seraphic-error-cube",
     voiceProfile: "ops",
     claw3dAvatar: "ops-guard",
