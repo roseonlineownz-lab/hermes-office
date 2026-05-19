@@ -3,13 +3,18 @@ import {
   shouldKeepPreparedTextMessageMap,
   shouldSkipPreparedTextMessageUpdate,
 } from "@/features/office/screens/officeScreenHelpers";
+import type { MockTextMessageScenario } from "@/lib/office/text/types";
+
+const makeScenario = (recipient: string, messageText: string): MockTextMessageScenario => ({
+  phase: "ready_to_send",
+  recipient,
+  messageText,
+  confirmationText: `Send to ${recipient}?`,
+  promptText: `Write ${recipient}`,
+  statusLine: "ready",
+});
 
 describe("officeScreenHelpers.shouldSkipPreparedTextMessageUpdate", () => {
-  const makeScenario = (recipient: string, messageText: string) => ({
-    recipient,
-    messageText,
-  });
-
   it("skips update when both request key and scenario are unchanged", () => {
     const current = {
       requestKey: "msg-1",
@@ -52,22 +57,21 @@ describe("officeScreenHelpers.shouldSkipPreparedTextMessageUpdate", () => {
 
 describe("officeScreenHelpers.shouldKeepPreparedTextMessageMap", () => {
   it("returns true when map is unchanged by identity", () => {
-    const state: Record<string, { requestKey: string; scenario: { x: string } }> = {
-      "agent-1": { requestKey: "msg-1", scenario: { x: "a" } },
+    const state = {
+      "agent-1": { requestKey: "msg-1", scenario: makeScenario("a", "hello") },
     };
 
     expect(shouldKeepPreparedTextMessageMap(state, state)).toBe(true);
   });
 
   it("returns false when map shape changed", () => {
-    const previous: Record<string, { requestKey: string; scenario: { x: string } }> = {
-      "agent-1": { requestKey: "msg-1", scenario: { x: "a" } },
+    const previous = {
+      "agent-1": { requestKey: "msg-1", scenario: makeScenario("a", "hello") },
     };
-    const next: Record<string, { requestKey: string; scenario: { x: string } }> = {
-      "agent-1": { requestKey: "msg-2", scenario: { x: "a" } },
+    const next = {
+      "agent-1": { requestKey: "msg-2", scenario: makeScenario("a", "hello") },
     };
 
     expect(shouldKeepPreparedTextMessageMap(previous, next)).toBe(false);
   });
 });
-
