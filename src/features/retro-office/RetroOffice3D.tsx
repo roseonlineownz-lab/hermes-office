@@ -20,8 +20,10 @@ import {
   X,
 } from "lucide-react";
 import {
+  Component,
   type ComponentProps,
   memo,
+  type ReactNode,
   Suspense,
   useCallback,
   useEffect,
@@ -1009,6 +1011,36 @@ function WebGlContextRecovery({
   }, [gl, invalidate, onContextLost, onContextRestored, setDpr]);
 
   return null;
+}
+
+class WebGlRenderBoundary extends Component<
+  {
+    children: ReactNode;
+    resetKey: string;
+    onError: (error: Error) => void;
+  },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: Error) {
+    this.props.onError(error);
+  }
+
+  componentDidUpdate(prevProps: { resetKey: string }) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.failed) {
+      this.setState({ failed: false });
+    }
+  }
+
+  render() {
+    if (this.state.failed) return null;
+    return this.props.children;
+  }
 }
 
 // Asset model definitions live in `src/features/retro-office/objects`.
@@ -3146,6 +3178,15 @@ export function RetroOffice3D({
   );
   const [webglContextLost, setWebglContextLost] = useState(false);
   const [webglSafeMode, setWebglSafeMode] = useState(false);
+  const [webglRendererFailed, setWebglRendererFailed] = useState(false);
+  const handleWebglRendererError = useCallback((error: Error) => {
+    setWebglSafeMode(true);
+    setWebglContextLost(false);
+    setWebglRendererFailed(true);
+    console.warn("[claw3d] WebGL renderer failed; showing static fallback.", {
+      message: error.message,
+    });
+  }, []);
   const handleWebglContextLost = useCallback(() => {
     setWebglSafeMode((current) => (current ? current : true));
     setWebglContextLost((current) => (current ? current : true));
@@ -6075,7 +6116,8 @@ export function RetroOffice3D({
           5. Floor/walls render immediately (no Suspense). Only GLB models are suspended.
         */}
         {!immersiveOverlayActive ? (
-          <Canvas
+          <WebGlRenderBoundary resetKey={canvasResetKey} onError={handleWebglRendererError}>
+            <Canvas
             key={canvasResetKey}
             orthographic
             dpr={
@@ -6739,7 +6781,8 @@ export function RetroOffice3D({
               onMove={handleFloorMove}
               onClick={handleFloorClick}
             />
-          </Canvas>
+            </Canvas>
+          </WebGlRenderBoundary>
         ) : null}
       </div>
 
@@ -6753,6 +6796,12 @@ export function RetroOffice3D({
           />
           <div className="pointer-events-none absolute inset-0 z-[6] wow-vignette" />
         </>
+      ) : null}
+
+      {webglRendererFailed && !immersiveOverlayActive ? (
+        <div className="pointer-events-none absolute bottom-3 left-3 z-30 max-w-[360px] rounded-md border border-rose-500/35 bg-[#14080b]/92 px-3 py-2 text-[11px] text-rose-100 shadow-lg backdrop-blur-sm">
+          3D renderer kon geen WebGL context maken in deze Chrome/GPU sessie. Runtime en gateway blijven live; herstart Chrome/GPU sessie om de 3D scene opnieuw te proberen.
+        </div>
       ) : null}
 
       {webglContextLost && !immersiveOverlayActive ? (
