@@ -1,4 +1,5 @@
 import type { VoiceReplyProvider } from "@/lib/voiceReply/provider";
+import { NOVA_IDENTITIES } from "@/lib/identity/novaIdentities";
 
 export type OfficeSpeechLanguage = "nl" | "en";
 
@@ -67,7 +68,7 @@ const EDGE_VOICES = {
 
 export const AGENT_VOICE_PROFILES: Record<string, AgentVoiceProfile> = {
   hermes: {
-    agentAliases: ["hermes", "hermes-gateway", "hermes-office", "office-adapter", "codex", "orchestrator", "planner"],
+    agentAliases: NOVA_IDENTITIES.hermes.aliases,
     label: "Hermes Orchestrator",
     defaultProvider: "kokoro",
     voices: {
@@ -78,7 +79,7 @@ export const AGENT_VOICE_PROFILES: Record<string, AgentVoiceProfile> = {
     style: "calm, concise operator voice",
   },
   openclaw: {
-    agentAliases: ["openclaw", "goclaw", "metaclaw", "clawmem", "claw"],
+    agentAliases: NOVA_IDENTITIES.openclaw.aliases,
     label: "OpenClaw Runtime",
     defaultProvider: "kokoro",
     voices: {
@@ -89,7 +90,7 @@ export const AGENT_VOICE_PROFILES: Record<string, AgentVoiceProfile> = {
     style: "direct runtime claw voice",
   },
   jarvis: {
-    agentAliases: ["jarvis", "mark", "aion", "core", "command"],
+    agentAliases: NOVA_IDENTITIES.jarvis.aliases,
     label: "Jarvis Core",
     defaultProvider: "kokoro",
     voices: {
@@ -100,7 +101,7 @@ export const AGENT_VOICE_PROFILES: Record<string, AgentVoiceProfile> = {
     style: "clear command-center voice",
   },
   office: {
-    agentAliases: ["office", "claw3d", "studio", "cockpit"],
+    agentAliases: NOVA_IDENTITIES.office.aliases,
     label: "Claw3D Office",
     defaultProvider: "kokoro",
     voices: {
@@ -111,7 +112,7 @@ export const AGENT_VOICE_PROFILES: Record<string, AgentVoiceProfile> = {
     style: "visible office floor voice",
   },
   qa: {
-    agentAliases: ["qa", "test", "tester", "review", "coder", "code"],
+    agentAliases: NOVA_IDENTITIES.qa.aliases,
     label: "QA Lab",
     defaultProvider: "kokoro",
     voices: {
@@ -122,7 +123,7 @@ export const AGENT_VOICE_PROFILES: Record<string, AgentVoiceProfile> = {
     style: "precise test-lab voice",
   },
   leadgen: {
-    agentAliases: ["leadgen", "lead", "sales", "outreach", "scout", "research"],
+    agentAliases: NOVA_IDENTITIES.scout.aliases,
     label: "LeadGen",
     defaultProvider: "kokoro",
     voices: {
@@ -133,7 +134,7 @@ export const AGENT_VOICE_PROFILES: Record<string, AgentVoiceProfile> = {
     style: "fast commercial outreach voice",
   },
   media: {
-    agentAliases: ["media", "publisher", "viral", "video", "voice", "livekit", "soundclaw"],
+    agentAliases: [...NOVA_IDENTITIES.media.aliases, ...NOVA_IDENTITIES.publisher.aliases],
     label: "Media / SoundClaw",
     defaultProvider: "kokoro",
     voices: {
@@ -144,7 +145,7 @@ export const AGENT_VOICE_PROFILES: Record<string, AgentVoiceProfile> = {
     style: "energetic media voice",
   },
   freebuff: {
-    agentAliases: ["freebuff", "gordon", "remote", "windows"],
+    agentAliases: NOVA_IDENTITIES.freebuff.aliases,
     label: "Freebuff Remote",
     defaultProvider: "kokoro",
     voices: {
@@ -155,7 +156,7 @@ export const AGENT_VOICE_PROFILES: Record<string, AgentVoiceProfile> = {
     style: "remote assistant voice",
   },
   ops: {
-    agentAliases: ["vps", "ops", "security", "firewall", "server", "error"],
+    agentAliases: NOVA_IDENTITIES.ops.aliases,
     label: "VPS / Ops Guard",
     defaultProvider: "kokoro",
     voices: {
