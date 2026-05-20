@@ -127,7 +127,7 @@ export type StudioAnalyticsPreferencePatch = {
   budgets?: Partial<StudioAnalyticsBudgetSettings>;
 };
 
-export type StudioVoiceRepliesProvider = "elevenlabs";
+export type StudioVoiceRepliesProvider = "edge" | "elevenlabs" | "vibevoice";
 
 export type StudioVoiceRepliesPreference = {
   enabled: boolean;
@@ -407,7 +407,7 @@ export const defaultStudioAnalyticsPreference = (): StudioAnalyticsPreference =>
 export const defaultStudioVoiceRepliesPreference =
   (): StudioVoiceRepliesPreference => ({
     enabled: false,
-    provider: "elevenlabs",
+    provider: "edge",
     voiceId: null,
     speed: 1,
   });
@@ -1132,10 +1132,12 @@ const normalizeAnalytics = (value: unknown): Record<string, StudioAnalyticsPrefe
 
 const normalizeVoiceRepliesProvider = (
   value: unknown,
-  fallback: StudioVoiceRepliesProvider = "elevenlabs"
+  fallback: StudioVoiceRepliesProvider = "edge"
 ): StudioVoiceRepliesProvider => {
   const provider = coerceString(value);
-  return provider === "elevenlabs" ? provider : fallback;
+  return provider === "edge" || provider === "elevenlabs" || provider === "vibevoice"
+    ? provider
+    : fallback;
 };
 
 const normalizeVoiceRepliesPreference = (
