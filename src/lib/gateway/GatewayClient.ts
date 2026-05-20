@@ -849,8 +849,12 @@ export const useGatewayConnection = (
           lastKnownGoodForSelectedAdapter ??
           resolveDefaultGatewayProfile(nextAdapterType, normalizedDefaults)
         );
+        const savedTopLevelToken =
+          gateway && "token" in gateway && typeof gateway.token === "string"
+            ? gateway.token
+            : "";
         const nextGatewayUrl = selectedProfile.url;
-        const nextToken = selectedProfile.token;
+        const nextToken = selectedProfile.token || savedTopLevelToken;
         loadedGatewaySettings.current = {
           gatewayUrl: nextGatewayUrl.trim(),
           token: nextToken,
