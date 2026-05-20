@@ -901,21 +901,7 @@ async function handleMethod(method, params, id, sendEvent) {
 
     case "agents.list": {
       const sync = await syncBackendAgents();
-      const allAgents = [...agentRegistry.values()].map((agent) => ({
-        id: agent.id,
-        name: agent.name,
-        workspace: agent.workspace,
-        identity: { name: agent.name, emoji: "🤖" },
-        role: agent.role,
-        status: agent.backend?.status,
-        room: agent.backend?.room,
-        task: agent.backend?.task,
-        progress: agent.backend?.progress,
-        model: agent.settings?.model,
-        preferredModel: agent.backend?.preferredModel,
-        preferredProvider: agent.backend?.preferredProvider,
-        modelRole: agent.backend?.modelRole,
-      }));
+      const allAgents = serializeAgentRegistry();
       return resOk(id, { defaultId: AGENT_ID, mainKey: MAIN_KEY, agents: allAgents, sync });
     }
 
@@ -1252,14 +1238,39 @@ async function handleMethod(method, params, id, sendEvent) {
 // WebSocket server
 // ---------------------------------------------------------------------------
 
+function serializeAgentRegistry() {
+  return [...agentRegistry.values()].map((agent) => ({
+    id: agent.id,
+    name: agent.name,
+    workspace: agent.workspace,
+    identity: { name: agent.name, emoji: "🤖" },
+    role: agent.role,
+    status: agent.backend?.status,
+    room: agent.backend?.room,
+    task: agent.backend?.task,
+    progress: agent.backend?.progress,
+    model: agent.settings?.model,
+    preferredModel: agent.backend?.preferredModel,
+    preferredProvider: agent.backend?.preferredProvider,
+    modelRole: agent.backend?.modelRole,
+  }));
+}
+
 function startAdapter() {
-  const httpServer = http.createServer((req, res) => {
+  const httpServer = http.createServer(async (req, res) => {
     // CORS headers for browser requests
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
     if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
     if (req.url === "/health") { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true })); return; }
+    if (req.url === "/agents") {
+      const sync = await syncBackendAgents();
+      const agents = serializeAgentRegistry();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, defaultId: AGENT_ID, mainKey: MAIN_KEY, count: agents.length, agents, sync }));
+      return;
+    }
     res.writeHead(200, { "Content-Type": "text/plain" });
     res.end("Hermes Gateway Adapter – OK\n");
   });
