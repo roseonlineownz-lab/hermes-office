@@ -15,7 +15,11 @@ fuser -k 3000/tcp &>/dev/null || true
 log "Stopping Hermes Adapter (port 18789)..."
 fuser -k 18789/tcp &>/dev/null || true
 
-log "Stopping Hermes API (port 8642)..."
+log "Stopping Hermes bridge/gateway/API (ports 8644/8643/8642)..."
+systemctl --user stop nova-hermes-api-bridge.service &>/dev/null || true
+systemctl --user stop hermes-gateway.service &>/dev/null || true
+fuser -k 8644/tcp &>/dev/null || true
+fuser -k 8643/tcp &>/dev/null || true
 fuser -k 8642/tcp &>/dev/null || true
 
 log "Stopping OpenClaw Gateway (port 18791)..."

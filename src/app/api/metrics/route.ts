@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 const SERVICES = [
   { name: "NovaMaster Office", url: "http://127.0.0.1:3000/", category: "core" },
   { name: "Hermes Adapter", url: "http://127.0.0.1:18789/health", category: "core" },
-  { name: "Hermes API", url: "http://127.0.0.1:8642/health", category: "core" },
+  { name: "Hermes API", url: "http://127.0.0.1:8644/health", category: "core" },
   { name: "OpenClaw Gateway", url: "http://127.0.0.1:18791/", category: "core" },
   { name: "GoClaw", url: "http://127.0.0.1:18790/health", category: "core" },
   { name: "MetaClaw", url: "http://127.0.0.1:30000/health", category: "core" },

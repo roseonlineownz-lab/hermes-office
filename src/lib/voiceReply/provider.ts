@@ -16,8 +16,9 @@ export type VoiceReplySynthesisRequest = {
   speed?: number;
 };
 
-const VIBEVOICE_BRIDGE_URL =
-  process.env.VIBEVOICE_BRIDGE_URL?.trim() || "http://127.0.0.1:8094";
+const VIBEVOICE_TTS_BIN =
+  process.env.VIBEVOICE_TTS_BIN?.trim() || "/home/faramix/bin/vibevoice-tts";
+const EDGE_TTS_BIN = process.env.EDGE_TTS_BIN?.trim() || "/home/faramix/.local/bin/edge-tts";
 const DEFAULT_VOICE_REPLY_PROVIDER: VoiceReplyProvider = "edge";
 const DEFAULT_VIBEVOICE_VOICE = "en-Carter_man";
 const DEFAULT_EDGE_VOICE = "nl-NL-FennaNeural";
@@ -26,6 +27,26 @@ const ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1/text-to-speech";
 const DEFAULT_ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
 const DEFAULT_ELEVENLABS_MODEL_ID =
   process.env.ELEVENLABS_MODEL_ID?.trim() || "eleven_flash_v2_5";
+
+const inferLanguageFromVoice = (voiceId: string | null | undefined): "nl" | "en" => {
+  const voice = voiceId?.trim().toLowerCase() ?? "";
+  return voice.startsWith("nl-") ? "nl" : "en";
+};
+
+const defaultEdgeVoiceForLanguage = (language: "nl" | "en"): string =>
+  language === "nl" ? DEFAULT_EDGE_VOICE : "en-US-JennyNeural";
+
+const fallbackRequestForProvider = (
+  request: VoiceReplySynthesisRequest,
+  provider: VoiceReplyProvider
+): VoiceReplySynthesisRequest => {
+  if (provider !== "edge") return { ...request, provider };
+  const voiceId = request.voiceId?.trim();
+  const edgeVoice = voiceId?.match(/^[a-z]{2}-[A-Z]{2}-[A-Za-z]+Neural$/)
+    ? voiceId
+    : defaultEdgeVoiceForLanguage(inferLanguageFromVoice(request.voiceId));
+  return { ...request, provider, voiceId: edgeVoice };
+};
 
 const normalizeVoiceSpeed = (value: number | null | undefined): number => {
   if (typeof value !== "number" || !Number.isFinite(value)) return 1;
@@ -48,18 +69,25 @@ const synthesizeWithVibeVoice = async (
   request: VoiceReplySynthesisRequest
 ): Promise<Response> => {
   const voice = normalizeVoiceId(request.voiceId, DEFAULT_VIBEVOICE_VOICE);
-  const text = request.text;
-  const url = `${VIBEVOICE_BRIDGE_URL}/tts?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(voice)}`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { Accept: "audio/wav" },
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    const detail = (await response.text().catch(() => "")).trim();
-    throw new Error(detail || "VibeVoice synthesis failed.");
+  const outDir = path.join(tmpdir(), "novamaster-office-voice");
+  await mkdir(outDir, { recursive: true });
+  const outputPath = path.join(outDir, `${randomUUID()}.wav`);
+  try {
+    await execFileAsync(VIBEVOICE_TTS_BIN, [request.text, voice, outputPath], {
+      timeout: 45_000,
+      maxBuffer: 1024 * 1024,
+    });
+    const audio = await readFile(outputPath);
+    return new Response(audio, {
+      status: 200,
+      headers: { "Content-Type": "audio/wav" },
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`VibeVoice/Kokoro synthesis failed: ${detail}`);
+  } finally {
+    await rm(outputPath, { force: true }).catch(() => undefined);
   }
-  return response;
 };
 
 const synthesizeWithEdge = async (
@@ -71,7 +99,7 @@ const synthesizeWithEdge = async (
   const outputPath = path.join(outDir, `${randomUUID()}.mp3`);
   try {
     await execFileAsync(
-      "edge-tts",
+      EDGE_TTS_BIN,
       [
         "--voice",
         voice,
@@ -140,14 +168,30 @@ export const synthesizeVoiceReply = async (
   request: VoiceReplySynthesisRequest
 ): Promise<Response> => {
   const provider = request.provider ?? DEFAULT_VOICE_REPLY_PROVIDER;
-  switch (provider) {
-    case "vibevoice":
-      return synthesizeWithVibeVoice(request);
-    case "edge":
-      return synthesizeWithEdge(request);
-    case "elevenlabs":
-      return synthesizeWithElevenLabs(request);
-    default:
-      throw new Error("Unsupported voice reply provider.");
+  const chain: VoiceReplyProvider[] = [
+    provider,
+    ...(["edge", "vibevoice", "elevenlabs"] as VoiceReplyProvider[]).filter((item) => item !== provider),
+  ];
+  const errors: string[] = [];
+
+  for (const candidate of chain) {
+    try {
+      const nextRequest = fallbackRequestForProvider(request, candidate);
+      switch (candidate) {
+        case "vibevoice":
+          return await synthesizeWithVibeVoice(nextRequest);
+        case "edge":
+          return await synthesizeWithEdge(nextRequest);
+        case "elevenlabs":
+          return await synthesizeWithElevenLabs(nextRequest);
+        default:
+          throw new Error("Unsupported voice reply provider.");
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      errors.push(`${candidate}: ${detail}`);
+    }
   }
+
+  throw new Error(`Voice synthesis failed on all providers. ${errors.join(" | ")}`);
 };
