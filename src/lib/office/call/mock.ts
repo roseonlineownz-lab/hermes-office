@@ -24,12 +24,20 @@ const formatCalleeLabel = (callee: string): string => {
 const buildPromptText = (calleeLabel: string): string =>
   `What should I say to ${calleeLabel}?`;
 
-const DEMO_DIAL_NUMBER = "973-619-4672";
+// Use a reserved NANP fictional number (555-0100 .. 555-0199 are
+// reserved for use in fiction per the North American Numbering Plan)
+// instead of a real-looking US number so the mock UI doesn't display a
+// dial-out string that could be mistaken for a production endpoint.
+const DEMO_DIAL_NUMBER = "555-0123";
 
 const resolveDialNumber = (): string => DEMO_DIAL_NUMBER;
 
+const ASSISTANT_NAME =
+  process.env.NEXT_PUBLIC_OFFICE_ASSISTANT_NAME?.trim() ||
+  "the OpenClaw office assistant";
+
 const buildSpokenText = (message: string): string =>
-  `Hi, this is Luke assistant. He told me to tell you ${message}. Thank you.`;
+  `Hi, this is ${ASSISTANT_NAME}. They asked me to let you know: ${message}. Thank you.`;
 
 const buildRecipientReply = (message: string): string => {
   const normalized = normalizeWhitespace(message).toLowerCase();
