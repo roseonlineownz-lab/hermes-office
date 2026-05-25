@@ -5,6 +5,7 @@ import type { StudioSettingsCoordinator } from "@/lib/studio/coordinator";
 import {
   defaultStudioVoiceRepliesPreference,
   resolveVoiceRepliesPreference,
+  type StudioVoiceRepliesProvider,
   type StudioVoiceRepliesPreference,
 } from "@/lib/studio/settings";
 
@@ -95,6 +96,25 @@ export const useStudioVoiceRepliesPreference = ({
     [gatewayUrl, settingsCoordinator]
   );
 
+  const setProvider = useCallback(
+    (provider: StudioVoiceRepliesProvider) => {
+      const gatewayKey = gatewayUrl.trim();
+      setPreference((current) => ({ ...current, provider }));
+      if (!gatewayKey) return;
+      settingsCoordinator.schedulePatch(
+        {
+          voiceReplies: {
+            [gatewayKey]: {
+              provider,
+            },
+          },
+        },
+        0
+      );
+    },
+    [gatewayUrl, settingsCoordinator]
+  );
+
   const setSpeed = useCallback(
     (speed: number) => {
       const gatewayKey = gatewayUrl.trim();
@@ -121,6 +141,7 @@ export const useStudioVoiceRepliesPreference = ({
     voiceId: preference.voiceId,
     speed: preference.speed,
     setEnabled,
+    setProvider,
     setVoiceId,
     setSpeed,
   };

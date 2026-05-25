@@ -14,6 +14,32 @@ WATCH_MODE=false
 [[ "${1:-}" == "--json" ]] && JSON_MODE=true
 [[ "${1:-}" == "--watch" ]] && WATCH_MODE=true
 
+detect_hermes_api_base() {
+  local configured="${HERMES_API_URL:-}"
+  local candidates=()
+
+  if [[ -n "$configured" ]]; then
+    candidates+=("${configured%/}")
+  else
+    candidates+=(
+      "http://127.0.0.1:8644"
+      "http://127.0.0.1:8643"
+      "http://127.0.0.1:8642"
+    )
+  fi
+
+  for candidate in "${candidates[@]}"; do
+    if curl -sf --max-time 2 "$candidate/health" &>/dev/null; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+
+  echo "${candidates[0]:-http://127.0.0.1:8644}"
+}
+
+HERMES_API_BASE="$(detect_hermes_api_base)"
+
 check_http() {
   local name="$1" url="$2" timeout="${3:-3}"
   local start=$(date +%s%N)
@@ -56,7 +82,7 @@ run_checks() {
   # Core services
   results+=("$(check_http "NovaMaster Office" http://127.0.0.1:3000/)")
   results+=("$(check_http "Hermes Adapter" http://127.0.0.1:18789/health)")
-  results+=("$(check_http "Hermes API" http://127.0.0.1:8642/health)")
+  results+=("$(check_http "Hermes API" "$HERMES_API_BASE/health")")
   results+=("$(check_http "OpenClaw Gateway" http://127.0.0.1:18791/health)")
   results+=("$(check_http "GoClaw" http://127.0.0.1:18790/health)")
   results+=("$(check_http "MetaClaw" http://127.0.0.1:30000/health)")

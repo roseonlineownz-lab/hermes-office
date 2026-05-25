@@ -21,7 +21,7 @@ type RemoteAgentChatPanelProps = {
   sending: boolean;
   handoffing?: boolean;
   draft: string;
-  mode: RuntimeAgentMessageMode;
+  mode?: RuntimeAgentMessageMode;
   handoffContext?: string;
   handoffDeliverables?: string;
   handoffAcceptance?: string;
@@ -29,12 +29,12 @@ type RemoteAgentChatPanelProps = {
   messages: RemoteAgentChatMessage[];
   disabledReason?: string | null;
   onDraftChange: (value: string) => void;
-  onModeChange: (value: RuntimeAgentMessageMode) => void;
-  onHandoffContextChange: (value: string) => void;
-  onHandoffDeliverablesChange: (value: string) => void;
-  onHandoffAcceptanceChange: (value: string) => void;
+  onModeChange?: (value: RuntimeAgentMessageMode) => void;
+  onHandoffContextChange?: (value: string) => void;
+  onHandoffDeliverablesChange?: (value: string) => void;
+  onHandoffAcceptanceChange?: (value: string) => void;
   onSend: (message: string) => void;
-  onHandoff: (message: string) => void;
+  onHandoff?: (message: string) => void;
 };
 
 const formatTimestamp = (timestampMs: number) =>
@@ -50,7 +50,7 @@ export const RemoteAgentChatPanel = memo(function RemoteAgentChatPanel({
   sending,
   handoffing = false,
   draft,
-  mode,
+  mode = "direct",
   handoffContext = "",
   handoffDeliverables = "",
   handoffAcceptance = "",
@@ -58,12 +58,12 @@ export const RemoteAgentChatPanel = memo(function RemoteAgentChatPanel({
   messages,
   disabledReason,
   onDraftChange,
-  onModeChange,
-  onHandoffContextChange,
-  onHandoffDeliverablesChange,
-  onHandoffAcceptanceChange,
+  onModeChange = () => {},
+  onHandoffContextChange = () => {},
+  onHandoffDeliverablesChange = () => {},
+  onHandoffAcceptanceChange = () => {},
   onSend,
-  onHandoff,
+  onHandoff = onSend,
 }: RemoteAgentChatPanelProps) {
   const [draftValue, setDraftValue] = useState(draft);
   const feedRef = useRef<HTMLDivElement | null>(null);

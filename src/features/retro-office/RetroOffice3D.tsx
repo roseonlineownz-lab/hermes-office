@@ -5335,7 +5335,7 @@ export function RetroOffice3D({
     <div className="relative w-full h-full bg-[#1a1008] font-mono text-white overflow-hidden">
       {/* 3D Canvas — fills everything. */}
       <div
-        className="absolute inset-0"
+        className="absolute inset-0 [&_canvas]:!block [&_canvas]:!h-full [&_canvas]:!w-full"
         style={{
           cursor: spaceDown ? (spaceDragging ? "grabbing" : "grab") : undefined,
         }}
@@ -5373,6 +5373,25 @@ export function RetroOffice3D({
               powerPreference: "low-power",
             }}
             style={{ width: "100%", height: "100%" }}
+            onCreated={({ gl, size }) => {
+              const canvas = gl.domElement;
+              canvas.style.display = "block";
+              canvas.style.width = "100%";
+              canvas.style.height = "100%";
+
+              const host = canvas.parentElement;
+              if (!host) {
+                if (size.width > 0 && size.height > 0) {
+                  gl.setSize(Math.floor(size.width), Math.floor(size.height), false);
+                }
+                return;
+              }
+
+              const rect = host.getBoundingClientRect();
+              if (rect.width > 0 && rect.height > 0) {
+                gl.setSize(Math.floor(rect.width), Math.floor(rect.height), false);
+              }
+            }}
             onPointerUp={() => {
               if (drag.kind === "moving") setDrag({ kind: "idle" });
             }}

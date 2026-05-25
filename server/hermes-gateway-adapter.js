@@ -14,7 +14,7 @@
  * conversation history, system prompt, and settings.
  *
  * Environment variables:
- *   HERMES_API_URL        Hermes HTTP API base URL   (default: http://localhost:8642)
+ *   HERMES_API_URL        Hermes HTTP API base URL   (default auto-detect: 8644 -> 8643 -> 8642)
  *   HERMES_API_KEY        Bearer token for Hermes     (default: empty)
  *   HERMES_ADAPTER_PORT   WebSocket port              (default: 18789)
  *   HERMES_MODEL          Model identifier            (default: hermes)
@@ -56,7 +56,23 @@ function loadRuntimeEnv() {
 
 loadRuntimeEnv();
 
-const HERMES_API_URL = (process.env.HERMES_API_URL || "http://localhost:8642").replace(/\/$/, "");
+const HERMES_API_URL_ENV = (process.env.HERMES_API_URL || "").trim();
+const HERMES_API_CANDIDATES = Array.from(
+  new Set(
+    [
+      HERMES_API_URL_ENV,
+      "http://127.0.0.1:8644",
+      "http://127.0.0.1:8643",
+      "http://127.0.0.1:8642",
+      "http://localhost:8644",
+      "http://localhost:8643",
+      "http://localhost:8642",
+    ]
+      .map((u) => (typeof u === "string" ? u.trim().replace(/\/$/, "") : ""))
+      .filter(Boolean)
+  )
+);
+let activeHermesApiUrl = HERMES_API_CANDIDATES[0] || "http://127.0.0.1:8644";
 const HERMES_API_KEY = process.env.HERMES_API_KEY || "";
 const ADAPTER_PORT = parseInt(process.env.HERMES_ADAPTER_PORT || "18789", 10);
 const HERMES_MODEL = process.env.HERMES_MODEL || "hermes";
@@ -67,6 +83,7 @@ const AGENT_ID = "hermes";
 const MAIN_KEY = "main";
 const MAIN_SESSION_KEY = `agent:${AGENT_ID}:${MAIN_KEY}`;
 const CONFIG_PATH = `${HOME}/.hermes/config.json`;
+const CLAW3D_BACKEND_URL = process.env.CLAW3D_BACKEND_URL || "http://127.0.0.1:8095";
 const MAX_TOOL_ROUNDS = 8;
 
 // ---------------------------------------------------------------------------
@@ -232,6 +249,73 @@ const agentRegistry = new Map([
   }],
 ]);
 
+// ---------------------------------------------------------------------------
+// Sync agents from claw3d-real-backend into the gateway registry
+// ---------------------------------------------------------------------------
+
+function workspaceForAgentId(agentId) {
+  return `${HOME}/.hermes/workspace-${String(agentId || AGENT_ID).replace(/[^a-zA-Z0-9_.-]+/g, "-")}`;
+}
+
+function systemPromptForBackendAgent(agentId, agent) {
+  const name = agent?.name || agentId;
+  const task = agent?.task || "Ready for tasks";
+  const room = agent?.room || "office";
+  return `You are ${name}, a NovaMaster Claw3D office agent. Current room: ${room}. Current task: ${task}.`;
+}
+
+async function syncBackendAgents() {
+  try {
+    const res = await fetch(`${CLAW3D_BACKEND_URL}/agents`);
+    if (!res.ok) return { ok: false, count: agentRegistry.size, error: `backend_http_${res.status}` };
+    const { data } = await res.json();
+    if (!data || typeof data !== "object") return { ok: false, count: agentRegistry.size, error: "backend_agents_missing" };
+
+    let added = 0;
+    let updated = 0;
+    for (const [agentId, agent] of Object.entries(data)) {
+      if (!agentId || !agent || typeof agent !== "object") continue;
+      const nextAgent = {
+        id: agentId,
+        name: agent.name || agentId,
+        workspace: workspaceForAgentId(agentId),
+        role: agent.task || agent.room || "",
+        systemPrompt: systemPromptForBackendAgent(agentId, agent),
+        settings: { wipe: false, continuity: true, model: agent.model || HERMES_MODEL },
+        backend: {
+          status: agent.status || "unknown",
+          room: agent.room || "",
+          task: agent.task || "",
+          progress: typeof agent.progress === "number" ? agent.progress : null,
+          preferredModel: agent.preferred_model || agent.model || HERMES_MODEL,
+          preferredProvider: agent.preferred_provider || "",
+          modelRole: agent.model_role || "",
+        },
+      };
+
+      const existing = agentRegistry.get(agentId);
+      if (existing) {
+        agentRegistry.set(agentId, {
+          ...existing,
+          ...nextAgent,
+          settings: { ...existing.settings, ...nextAgent.settings },
+        });
+        updated++;
+      } else {
+        agentRegistry.set(agentId, nextAgent);
+        added++;
+      }
+    }
+
+    if (added > 0 || updated > 0) {
+      console.log(`[hermes-adapter] Synced backend agents: added=${added} updated=${updated} total=${agentRegistry.size}`);
+    }
+    return { ok: true, added, updated, count: agentRegistry.size };
+  } catch (err) {
+    return { ok: false, count: agentRegistry.size, error: sanitizeErrorMessage(err) };
+  }
+}
+
 // Set of all active sendEvent functions (one per connected WS client)
 /** @type {Set<(frame: object) => void>} */
 const activeSendEventFns = new Set();
@@ -305,42 +389,95 @@ function redactSecrets(value) {
 // Hermes HTTP API helpers
 // ---------------------------------------------------------------------------
 
-function hermesPost(path, body) {
-  return new Promise((resolve, reject) => {
-    const urlStr = HERMES_API_URL + path;
-    let url;
-    try { url = new URL(urlStr); } catch { reject(new Error(`Invalid URL: ${urlStr}`)); return; }
-    const transport = url.protocol === "https:" ? https : http;
-    const bodyStr = JSON.stringify(body);
-    const headers = { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(bodyStr) };
-    if (HERMES_API_KEY) headers["Authorization"] = `Bearer ${HERMES_API_KEY}`;
-    const req = transport.request(
-      { hostname: url.hostname, port: url.port ? parseInt(url.port, 10) : (url.protocol === "https:" ? 443 : 80),
-        path: url.pathname + (url.search || ""), method: "POST", headers },
-      resolve
-    );
-    req.on("error", reject);
-    req.write(bodyStr);
-    req.end();
-  });
+function candidateHermesApiUrls() {
+  const ordered = [];
+  if (activeHermesApiUrl) ordered.push(activeHermesApiUrl);
+  for (const candidate of HERMES_API_CANDIDATES) {
+    if (!ordered.includes(candidate)) ordered.push(candidate);
+  }
+  return ordered;
 }
 
-function hermesGet(path) {
+function canFailoverOnError(error) {
+  const code = (error && error.code) || "";
+  return [
+    "ECONNREFUSED",
+    "ECONNRESET",
+    "EHOSTUNREACH",
+    "ENETUNREACH",
+    "ETIMEDOUT",
+    "EPIPE",
+    "EAI_AGAIN",
+  ].includes(code);
+}
+
+function requestHermes(baseUrl, path, method, bodyStr) {
   return new Promise((resolve, reject) => {
-    const urlStr = HERMES_API_URL + path;
+    const urlStr = baseUrl + path;
     let url;
     try { url = new URL(urlStr); } catch { reject(new Error(`Invalid URL: ${urlStr}`)); return; }
     const transport = url.protocol === "https:" ? https : http;
     const headers = {};
     if (HERMES_API_KEY) headers["Authorization"] = `Bearer ${HERMES_API_KEY}`;
+    if (bodyStr !== undefined) {
+      headers["Content-Type"] = "application/json";
+      headers["Content-Length"] = Buffer.byteLength(bodyStr);
+    }
+
     const req = transport.request(
-      { hostname: url.hostname, port: url.port ? parseInt(url.port, 10) : (url.protocol === "https:" ? 443 : 80),
-        path: url.pathname + (url.search || ""), method: "GET", headers },
-      resolve
+      {
+        hostname: url.hostname,
+        port: url.port ? parseInt(url.port, 10) : (url.protocol === "https:" ? 443 : 80),
+        path: url.pathname + (url.search || ""),
+        method,
+        headers,
+      },
+      (res) => {
+        if (baseUrl !== activeHermesApiUrl) {
+          console.log(`[hermes-adapter] Hermes route switched ${activeHermesApiUrl} -> ${baseUrl}`);
+        }
+        activeHermesApiUrl = baseUrl;
+        resolve(res);
+      }
     );
-    req.on("error", reject);
+
+    req.setTimeout(5000, () => {
+      req.destroy(Object.assign(new Error(`Timeout contacting ${baseUrl}`), { code: "ETIMEDOUT" }));
+    });
+    req.on("error", (err) => reject({ err, baseUrl }));
+    if (bodyStr !== undefined) req.write(bodyStr);
     req.end();
   });
+}
+
+async function hermesRequest(path, method, body) {
+  const bodyStr = body === undefined ? undefined : JSON.stringify(body);
+  const urls = candidateHermesApiUrls();
+  let lastFailure = null;
+
+  for (const baseUrl of urls) {
+    try {
+      return await requestHermes(baseUrl, path, method, bodyStr);
+    } catch (failure) {
+      const err = failure?.err || failure;
+      if (!canFailoverOnError(err)) {
+        throw err;
+      }
+      lastFailure = { baseUrl, err };
+    }
+  }
+
+  const fallback = lastFailure?.err || new Error("Hermes API unreachable on all candidates");
+  const message = `[hermes-adapter] Hermes API unavailable (${sanitizeErrorMessage(fallback)}) candidates=${urls.join(",")}`;
+  throw Object.assign(new Error(message), { code: fallback.code || "HERMES_UNREACHABLE" });
+}
+
+function hermesPost(path, body) {
+  return hermesRequest(path, "POST", body);
+}
+
+function hermesGet(path) {
+  return hermesRequest(path, "GET");
 }
 
 async function readJsonBody(res) {
@@ -359,11 +496,26 @@ function sanitizeErrorMessage(error) {
 
 function extractOpenAiStyleError(payload, fallbackMessage) {
   if (payload && typeof payload === "object") {
-    const message =
-      typeof payload?.error?.message === "string"
-        ? payload.error.message.trim()
-        : "";
-    if (message) return message;
+    const candidates = [
+      payload?.error?.message,
+      payload?.message,
+      payload?.detail?.message,
+      payload?.detail?.error,
+      payload?.detail?.code,
+      payload?.raw,
+    ];
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+    if (payload.detail && typeof payload.detail === "object") {
+      try {
+        return JSON.stringify(payload.detail);
+      } catch {
+        // ignore
+      }
+    }
   }
   return fallbackMessage;
 }
@@ -482,8 +634,25 @@ async function streamOneTurn(messages, model, tools, onTextDelta, abortCheck) {
   body.model = resolvedModel;
   const res = await hermesPost("/v1/chat/completions", body);
   if (res.statusCode >= 400) {
-    res.resume();
-    throw new Error(`Hermes API HTTP ${res.statusCode}`);
+    let payload = {};
+    try {
+      payload = await readJsonBody(res);
+    } catch {
+      res.resume();
+    }
+    const errorMessage = extractOpenAiStyleError(payload, `Hermes API HTTP ${res.statusCode}`);
+    if (
+      res.statusCode === 400
+      && /stream_not_supported_by_bridge|stream\s+not\s+supported/i.test(errorMessage)
+    ) {
+      const fallback = await completeOneTurn(messages, resolvedModel, tools);
+      return {
+        textContent: fallback.textContent,
+        toolCalls: fallback.toolCalls,
+        finishReason: fallback.finishReason,
+      };
+    }
+    throw new Error(errorMessage);
   }
 
   let textContent = "";
@@ -832,12 +1001,9 @@ async function handleMethod(method, params, id, sendEvent) {
     // --- Agent management ---------------------------------------------------
 
     case "agents.list": {
-      const allAgents = [...agentRegistry.values()].map((agent) => ({
-        id: agent.id, name: agent.name, workspace: agent.workspace,
-        identity: { name: agent.name, emoji: "🤖" },
-        role: agent.role,
-      }));
-      return resOk(id, { defaultId: AGENT_ID, mainKey: MAIN_KEY, agents: allAgents });
+      const sync = await syncBackendAgents();
+      const allAgents = serializeAgentRegistry();
+      return resOk(id, { defaultId: AGENT_ID, mainKey: MAIN_KEY, agents: allAgents, sync });
     }
 
     case "agents.create": {
@@ -1173,14 +1339,49 @@ async function handleMethod(method, params, id, sendEvent) {
 // WebSocket server
 // ---------------------------------------------------------------------------
 
+function serializeAgentRegistry() {
+  return [...agentRegistry.values()].map((agent) => ({
+    id: agent.id,
+    name: agent.name,
+    workspace: agent.workspace,
+    identity: { name: agent.name, emoji: "🤖" },
+    role: agent.role,
+    status: agent.backend?.status,
+    room: agent.backend?.room,
+    task: agent.backend?.task,
+    progress: agent.backend?.progress,
+    model: agent.settings?.model,
+    preferredModel: agent.backend?.preferredModel,
+    preferredProvider: agent.backend?.preferredProvider,
+    modelRole: agent.backend?.modelRole,
+  }));
+}
+
 function startAdapter() {
-  const httpServer = http.createServer((req, res) => {
+  const httpServer = http.createServer(async (req, res) => {
     // CORS headers for browser requests
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
     if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
-    if (req.url === "/health") { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true })); return; }
+    if (req.url === "/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        ok: true,
+        activeHermesApiUrl,
+        hermesApiCandidates: candidateHermesApiUrls(),
+        claw3dBackendUrl: CLAW3D_BACKEND_URL,
+        agentCount: agentRegistry.size,
+      }));
+      return;
+    }
+    if (req.url === "/agents") {
+      const sync = await syncBackendAgents();
+      const agents = serializeAgentRegistry();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, defaultId: AGENT_ID, mainKey: MAIN_KEY, count: agents.length, agents, sync }));
+      return;
+    }
     res.writeHead(200, { "Content-Type": "text/plain" });
     res.end("Hermes Gateway Adapter – OK\n");
   });
@@ -1282,11 +1483,14 @@ function startAdapter() {
     });
   });
 
-  httpServer.listen(ADAPTER_PORT, "127.0.0.1", () => {
+  httpServer.listen(ADAPTER_PORT, "127.0.0.1", async () => {
+    await syncBackendAgents();
     console.log(`\n[hermes-adapter] ✓ Listening on ws://localhost:${ADAPTER_PORT}`);
-    console.log(`[hermes-adapter] ✓ Forwarding to Hermes API at ${HERMES_API_URL}`);
+    console.log(`[hermes-adapter] ✓ Forwarding to Hermes API candidates: ${HERMES_API_CANDIDATES.join(", ")}`);
+    console.log(`[hermes-adapter] ✓ Active Hermes route: ${activeHermesApiUrl}`);
     console.log(`[hermes-adapter] ✓ Model: ${HERMES_MODEL}`);
     console.log(`[hermes-adapter] ✓ Multi-agent orchestration: ENABLED`);
+    console.log(`[hermes-adapter] ✓ Agents: ${agentRegistry.size} (${[...agentRegistry.keys()].join(", ")})`);
     console.log(`\nOpen Claw3D → ws://localhost:${ADAPTER_PORT}\n`);
   });
 

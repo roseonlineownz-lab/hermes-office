@@ -25,7 +25,7 @@ back as gateway events.
 Start your Hermes API server. The default expected endpoint is:
 
 ```text
-http://localhost:8642
+http://localhost:8644
 ```
 
 ### 2. Configure environment
@@ -35,7 +35,7 @@ Copy `.env.example` to `.env` and set the Hermes values:
 ```env
 NEXT_PUBLIC_GATEWAY_URL=ws://localhost:18789
 
-HERMES_API_URL=http://localhost:8642
+HERMES_API_URL=http://localhost:8644
 HERMES_API_KEY=
 HERMES_ADAPTER_PORT=18789
 HERMES_MODEL=hermes

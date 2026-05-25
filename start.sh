@@ -86,17 +86,46 @@ else
   fi
 fi
 
-# ── 4. Hermes API ──────────────────────────────────────────────────────────
-if curl -sf --max-time 2 http://127.0.0.1:8642/health &>/dev/null; then
-  log "Hermes API already running"
-else
-  log "Starting Hermes API..."
-  hermes api start &>/dev/null || true
-  if wait_for_http "Hermes API" "http://127.0.0.1:8642/health" 20; then
-    log "Hermes API ready"
-  else
-    warn "Hermes API not responding — continuing anyway"
+# ── 4. Hermes API bridge / gateway detectie ────────────────────────────────
+HERMES_API_URL_DETECTED=""
+for candidate in \
+  "http://127.0.0.1:8644" \
+  "http://127.0.0.1:8643" \
+  "http://127.0.0.1:8642"
+do
+  if curl -sf --max-time 2 "$candidate/health" &>/dev/null; then
+    HERMES_API_URL_DETECTED="$candidate"
+    break
   fi
+done
+
+if [[ -n "$HERMES_API_URL_DETECTED" ]]; then
+  log "Hermes API detected on $HERMES_API_URL_DETECTED"
+else
+  log "Starting Hermes bridge/gateway..."
+  systemctl --user start nova-hermes-api-bridge.service &>/dev/null || true
+  systemctl --user start hermes-gateway.service &>/dev/null || true
+  hermes api start &>/dev/null || true
+
+  for candidate in \
+    "http://127.0.0.1:8644" \
+    "http://127.0.0.1:8643" \
+    "http://127.0.0.1:8642"
+  do
+    if wait_for_http "Hermes API" "$candidate/health" 12; then
+      HERMES_API_URL_DETECTED="$candidate"
+      log "Hermes API ready on $candidate"
+      break
+    fi
+  done
+
+  if [[ -z "$HERMES_API_URL_DETECTED" ]]; then
+    warn "Hermes API not responding on :8644/:8643/:8642 — continuing anyway"
+  fi
+fi
+
+if [[ -n "$HERMES_API_URL_DETECTED" ]]; then
+  export HERMES_API_URL="$HERMES_API_URL_DETECTED"
 fi
 
 # ── 5. Hermes Gateway Adapter ──────────────────────────────────────────────
@@ -177,7 +206,7 @@ echo ""
 echo -e "  ${GREEN}Office:${NC}        http://localhost:3000"
 echo -e "  ${GREEN}Adapter:${NC}       ws://127.0.0.1:18789"
 echo -e "  ${GREEN}Gateway:${NC}       ws://127.0.0.1:18791"
-echo -e "  ${GREEN}Hermes API:${NC}   http://127.0.0.1:8642"
+echo -e "  ${GREEN}Hermes API:${NC}   ${HERMES_API_URL_DETECTED:-http://127.0.0.1:8644}"
 echo -e "  ${GREEN}Dashboard:${NC}    http://127.0.0.1:9119"
 echo ""
 echo -e "  ${YELLOW}Logs:${NC}"

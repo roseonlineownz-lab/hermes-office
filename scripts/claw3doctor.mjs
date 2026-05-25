@@ -205,18 +205,50 @@ const detectWorkspaceState = () => {
 };
 
 const detectHermesModelHealth = async () => {
-  const apiUrl = (
-    trim(process.env.HERMES_API_URL) || "http://localhost:8642"
-  ).replace(/\/$/, "");
+  const configuredApiUrl = trim(process.env.HERMES_API_URL);
+  const defaults = ["http://localhost:8644", "http://localhost:8643", "http://localhost:8642"];
+  const candidates = configuredApiUrl
+    ? [configuredApiUrl, ...defaults]
+    : defaults;
+
+  const normalized = Array.from(
+    new Set(
+      candidates
+        .map((value) => trim(value))
+        .filter(Boolean)
+        .map((value) => value.replace(/\/$/, ""))
+    )
+  );
+
   const apiKey = trim(process.env.HERMES_API_KEY);
   const model = trim(process.env.HERMES_MODEL) || "hermes";
   const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
-  const result = await probeHttpJson({ url: `${apiUrl}/v1/models`, headers });
+
+  let apiUrl = normalized[0] || "http://localhost:8644";
+  let probe = {
+    ok: false,
+    status: "error",
+    error: "No Hermes API endpoint candidates configured",
+  };
+
+  for (const candidate of normalized) {
+    const result = await probeHttpJson({ url: `${candidate}/v1/models`, headers });
+    if (result.ok) {
+      apiUrl = candidate;
+      probe = result;
+      break;
+    }
+    if (!probe.ok) {
+      apiUrl = candidate;
+      probe = result;
+    }
+  }
+
   return {
     apiUrl,
     model,
     apiKeyConfigured: Boolean(apiKey),
-    probe: result,
+    probe,
   };
 };
 
@@ -558,11 +590,16 @@ async function main() {
           ),
         );
       }
-    } else if (hermes.probe.status === 401) {
+    } else if (hermes.probe.status === 401 || hermes.probe.status === 403) {
       checks.push(
-        checkFail("Hermes", "Hermes API", "Hermes API returned HTTP 401.", [
-          "Verify HERMES_API_KEY and confirm the adapter is loading the same .env values you expect.",
-        ]),
+        checkWarn(
+          "Hermes",
+          "Hermes API auth",
+          `Hermes API reachable on ${hermes.apiUrl} but returned HTTP ${hermes.probe.status} for /v1/models.`,
+          [
+            "Set HERMES_API_KEY if model enumeration requires authentication.",
+          ],
+        ),
       );
     } else {
       checks.push(

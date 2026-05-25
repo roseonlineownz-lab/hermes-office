@@ -22,10 +22,46 @@ restart_service() {
   fi
 }
 
+restart_hermes_api() {
+  local configured="${HERMES_API_URL:-}"
+  local candidates=()
+
+  if [[ -n "$configured" ]]; then
+    candidates+=("${configured%/}")
+  else
+    candidates+=(
+      "http://127.0.0.1:8644"
+      "http://127.0.0.1:8643"
+      "http://127.0.0.1:8642"
+    )
+  fi
+
+  for candidate in "${candidates[@]}"; do
+    if curl -sf --max-time 3 "$candidate/health" &>/dev/null; then
+      return 0
+    fi
+  done
+
+  log "DOWN: Hermes API — attempting restart"
+  systemctl --user restart nova-hermes-api-bridge.service 2>/dev/null || true
+  systemctl --user restart hermes-gateway.service 2>/dev/null || true
+  hermes api start 2>/dev/null || true
+  sleep 3
+
+  for candidate in "${candidates[@]}"; do
+    if curl -sf --max-time 3 "$candidate/health" &>/dev/null; then
+      log "RECOVERED: Hermes API on $candidate"
+      return 0
+    fi
+  done
+
+  log "FAILED: Hermes API still down after restart"
+}
+
 # Core services
 restart_service "Hermes Adapter" "http://127.0.0.1:18789/health" "systemctl --user restart hermes-adapter"
 restart_service "NovaMaster Office" "http://127.0.0.1:3000/" "systemctl --user restart novamaster-office"
-restart_service "Hermes API" "http://127.0.0.1:8642/health" "systemctl --user restart hermes-gateway"
+restart_hermes_api
 restart_service "OpenClaw Gateway" "http://127.0.0.1:18791/" "systemctl --user restart openclaw-gateway"
 restart_service "Qdrant" "http://127.0.0.1:6333/healthz" "nohup qdrant --config-path /tmp/qdrant-config.yaml &>/dev/null &"
 
