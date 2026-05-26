@@ -1012,12 +1012,20 @@ async function handleMethod(method, params, id, sendEvent) {
       const newId = `${slug}-${randomId().slice(0, 6)}`;
       const workspace = (typeof p.workspace === "string" && p.workspace)
         ? p.workspace : `${HOME}/.hermes/workspace-${slug}`;
+      const role = typeof p.role === "string" ? p.role.trim() : "";
+      const instructions = typeof p.instructions === "string" ? p.instructions.trim() : "";
+      const boundaries = typeof p.boundaries === "string" ? p.boundaries.trim() : "";
+      const model = typeof p.model === "string" && p.model.trim() ? p.model.trim() : HERMES_MODEL;
+      const wipe = typeof p.wipe === "boolean" ? p.wipe : false;
+      const continuity = typeof p.continuity === "boolean" ? p.continuity : true;
+      let systemPrompt = instructions || `You are ${agentName}${role ? `, a ${role}` : ""}.`;
+      if (boundaries) systemPrompt += `\n\nBoundaries: ${boundaries}`;
       agentRegistry.set(newId, {
         id: newId, name: agentName, workspace,
-        role: "", systemPrompt: `You are ${agentName}.`,
-        settings: { wipe: false, continuity: true, model: HERMES_MODEL },
+        role, systemPrompt,
+        settings: { wipe, continuity, model, boundaries },
       });
-      return resOk(id, { agentId: newId, name: agentName, workspace });
+      return resOk(id, { agentId: newId, name: agentName, role, workspace, settings: { wipe, continuity, model, boundaries } });
     }
 
     case "agents.delete": {
@@ -1036,8 +1044,21 @@ async function handleMethod(method, params, id, sendEvent) {
         if (typeof p.name === "string" && p.name.trim()) existing.name = p.name.trim();
         if (typeof p.workspace === "string" && p.workspace.trim()) existing.workspace = p.workspace.trim();
         if (typeof p.role === "string") existing.role = p.role.trim();
+        if (typeof p.instructions === "string") existing.systemPrompt = p.instructions;
+        if (typeof p.systemPrompt === "string") existing.systemPrompt = p.systemPrompt;
+        if (typeof p.wipe === "boolean") existing.settings.wipe = p.wipe;
+        if (typeof p.continuity === "boolean") existing.settings.continuity = p.continuity;
+        if (typeof p.boundaries === "string") {
+          existing.settings.boundaries = p.boundaries;
+          if (existing.systemPrompt && p.boundaries) {
+            existing.systemPrompt = existing.systemPrompt.replace(/\n\nBoundaries:.*$/s, "") + `\n\nBoundaries: ${p.boundaries}`;
+          }
+        }
+        if (typeof p.model === "string" && p.model.trim()) existing.settings.model = p.model.trim();
       }
-      return resOk(id, { ok: true, removedBindings: 0 });
+      return resOk(id, { ok: Boolean(existing), removedBindings: 0, agent: existing ? {
+        id: existing.id, name: existing.name, role: existing.role, workspace: existing.workspace, settings: existing.settings,
+      } : null });
     }
 
     case "agents.files.get": {
