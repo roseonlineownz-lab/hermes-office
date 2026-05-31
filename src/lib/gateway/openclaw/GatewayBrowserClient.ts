@@ -703,7 +703,11 @@ export class GatewayBrowserClient {
     this.connectNonce = null;
     this.connectSent = false;
     if (this.connectTimer !== null) window.clearTimeout(this.connectTimer);
-    const SOCKET_OPEN_CONNECT_DELAY_MS = 75;
+    // The Studio gateway may emit a connect.challenge immediately after the
+    // socket opens. Give that frame enough time to arrive before sending the
+    // fallback connect request, otherwise the client can mark connectSent and
+    // ignore the challenge-driven connect path.
+    const SOCKET_OPEN_CONNECT_DELAY_MS = 350;
     gatewayBrowserDebugLog("queue-connect", { delayMs: SOCKET_OPEN_CONNECT_DELAY_MS });
     this.connectTimer = window.setTimeout(() => {
       void this.sendConnect();

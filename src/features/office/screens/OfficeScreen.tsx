@@ -948,6 +948,45 @@ export function OfficeScreen({
   const runtimeSupportsRunLifecycle = supportsCapability("runtime-agent-events");
   const { state, dispatch, hydrateAgents, setError, setLoading } =
     useAgentStore();
+
+  useEffect(() => {
+    if (!connectPromptReady) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const envelope = await settingsCoordinator.loadSettingsEnvelope({
+          force: true,
+        });
+        if (cancelled) return;
+        const gateway = envelope.settings?.gateway ?? null;
+        const savedAdapterType = gateway?.adapterType;
+        const savedGatewayUrl =
+          typeof gateway?.url === "string" ? gateway.url.trim() : "";
+        if (
+          savedGatewayUrl &&
+          (savedAdapterType === "hermes" ||
+            savedAdapterType === "openclaw" ||
+            savedAdapterType === "demo" ||
+            savedAdapterType === "custom") &&
+          savedAdapterType !== selectedAdapterType
+        ) {
+          setSelectedAdapterType(savedAdapterType);
+          setGatewayUrl(savedGatewayUrl);
+        }
+      } catch (error) {
+        console.warn("[office] failed to reconcile saved gateway settings", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    connectPromptReady,
+    selectedAdapterType,
+    setGatewayUrl,
+    setSelectedAdapterType,
+    settingsCoordinator,
+  ]);
   const initialLocalOfficeAgents = useMemo(
     () => mapLocalRuntimeStateToOfficeAgents(initialLocalRuntimeState),
     [initialLocalRuntimeState],

@@ -431,6 +431,51 @@ function CameraRig({ target }: { target: [number, number, number] }) {
   return null;
 }
 
+function CanvasResizeGuard() {
+  const { camera, gl, invalidate, setSize } = useThree();
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const host = canvas.parentElement;
+    if (!host) return;
+
+    let raf = 0;
+    const applySize = () => {
+      const rect = host.getBoundingClientRect();
+      const width = Math.max(1, Math.floor(rect.width));
+      const height = Math.max(1, Math.floor(rect.height));
+      if (canvas.width !== width || canvas.height !== height) {
+        setSize(width, height);
+        gl.setSize(width, height, false);
+      }
+      canvas.style.display = "block";
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
+      camera.updateProjectionMatrix();
+      invalidate();
+    };
+    const schedule = () => {
+      window.cancelAnimationFrame(raf);
+      raf = window.requestAnimationFrame(applySize);
+    };
+
+    schedule();
+    const observer = new ResizeObserver(schedule);
+    observer.observe(host);
+    window.addEventListener("resize", schedule);
+    const timeout = window.setTimeout(schedule, 250);
+
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.clearTimeout(timeout);
+      window.removeEventListener("resize", schedule);
+      observer.disconnect();
+    };
+  }, [camera, gl, invalidate, setSize]);
+
+  return null;
+}
+
 const NOOP_FURNITURE_UID_HANDLER = () => {};
 const NOOP_FURNITURE_HANDLER = () => {};
 const EMPTY_FURNITURE_ITEMS: FurnitureItem[] = [];
@@ -3079,19 +3124,23 @@ export function RetroOffice3D({
         : null,
     [activeAtmUid, furniture],
   );
-  const activeKanbanBoard = useMemo(
-    () =>
-      activeKanbanUid
-        ? (furniture.find(
-            (item) =>
-              item._uid === activeKanbanUid && item.type === "kanban_board",
-          ) ?? null)
-        : null,
-    [activeKanbanUid, furniture],
-  );
-  const kanbanBoardItem = useMemo(
-    () => furniture.find((item) => item.type === "kanban_board") ?? null,
+  const kanbanBoardItems = useMemo(
+    () => furniture.filter((item) => item.type === "kanban_board"),
     [furniture],
+  );
+  const activeKanbanBoard = useMemo(() => {
+    if (!activeKanbanUid) return null;
+    const exact = kanbanBoardItems.find(
+      (item) =>
+        typeof item._uid === "string" && item._uid.trim() === activeKanbanUid,
+    );
+    if (exact) return exact;
+    if (kanbanBoardItems.length === 1) return kanbanBoardItems[0];
+    return null;
+  }, [activeKanbanUid, kanbanBoardItems]);
+  const kanbanBoardItem = useMemo(
+    () => kanbanBoardItems[0] ?? null,
+    [kanbanBoardItems],
   );
   const atmImmersive = Boolean(activeAtm && atmImmersiveReady);
   const activeSmsBooth = useMemo(
@@ -4596,7 +4645,9 @@ export function RetroOffice3D({
         closeManualPhoneBoothView();
       }
       onMonitorSelect?.(null);
-      setActiveKanbanUid(item._uid);
+      const nextKanbanUid =
+        typeof item._uid === "string" ? item._uid.trim() : "";
+      setActiveKanbanUid(nextKanbanUid || "__kanban_fallback__");
     },
     [
       closeManualPhoneBoothView,
@@ -5387,17 +5438,27 @@ export function RetroOffice3D({
                 return;
               }
 
-              const rect = host.getBoundingClientRect();
-              if (rect.width > 0 && rect.height > 0) {
-                gl.setSize(Math.floor(rect.width), Math.floor(rect.height), false);
-              }
+              const applyHostSize = () => {
+                const rect = host.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                  const width = Math.floor(rect.width);
+                  const height = Math.floor(rect.height);
+                  canvas.width = width;
+                  canvas.height = height;
+                  gl.setSize(width, height, false);
+                }
+              };
+              applyHostSize();
+              window.requestAnimationFrame(applyHostSize);
+              window.setTimeout(applyHostSize, 250);
             }}
             onPointerUp={() => {
               if (drag.kind === "moving") setDrag({ kind: "idle" });
             }}
           >
-            {/* Ensure camera looks at the active office target after mount. */}
+            {/* Ensure camera looks at the active office target after mount and keep the canvas backing buffer in sync with the visible viewport. */}
             <CameraRig target={cameraTarget} />
+            <CanvasResizeGuard />
             <WebGlContextRecovery
               onContextLost={handleWebglContextLost}
               onContextRestored={handleWebglContextRestored}
