@@ -433,6 +433,31 @@ function CameraRig({ target }: { target: [number, number, number] }) {
 
 function CanvasResizeGuard() {
   const { camera, gl, invalidate, setSize } = useThree();
+  const lastSizeRef = useRef<[number, number]>([0, 0]);
+
+  const applySize = useCallback(() => {
+    const canvas = gl.domElement;
+    const host = canvas.parentElement;
+    const rect = host?.getBoundingClientRect() ?? canvas.getBoundingClientRect();
+    const width = Math.max(1, Math.floor(rect.width || canvas.clientWidth || window.innerWidth));
+    const height = Math.max(1, Math.floor(rect.height || canvas.clientHeight || window.innerHeight));
+    const [lastWidth, lastHeight] = lastSizeRef.current;
+
+    canvas.style.display = "block";
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
+
+    if (width !== lastWidth || height !== lastHeight || canvas.width < width || canvas.height < height) {
+      lastSizeRef.current = [width, height];
+      gl.setPixelRatio(1);
+      gl.setSize(width, height, false);
+      canvas.width = width;
+      canvas.height = height;
+      setSize(width, height);
+      camera.updateProjectionMatrix();
+      invalidate();
+    }
+  }, [camera, gl, invalidate, setSize]);
 
   useEffect(() => {
     const canvas = gl.domElement;
@@ -440,20 +465,6 @@ function CanvasResizeGuard() {
     if (!host) return;
 
     let raf = 0;
-    const applySize = () => {
-      const rect = host.getBoundingClientRect();
-      const width = Math.max(1, Math.floor(rect.width));
-      const height = Math.max(1, Math.floor(rect.height));
-      if (canvas.width !== width || canvas.height !== height) {
-        setSize(width, height);
-        gl.setSize(width, height, false);
-      }
-      canvas.style.display = "block";
-      canvas.style.width = "100%";
-      canvas.style.height = "100%";
-      camera.updateProjectionMatrix();
-      invalidate();
-    };
     const schedule = () => {
       window.cancelAnimationFrame(raf);
       raf = window.requestAnimationFrame(applySize);
@@ -463,15 +474,20 @@ function CanvasResizeGuard() {
     const observer = new ResizeObserver(schedule);
     observer.observe(host);
     window.addEventListener("resize", schedule);
-    const timeout = window.setTimeout(schedule, 250);
+    const timeouts = [100, 250, 750, 1500].map((ms) => window.setTimeout(schedule, ms));
 
     return () => {
       window.cancelAnimationFrame(raf);
-      window.clearTimeout(timeout);
+      timeouts.forEach((timeout) => window.clearTimeout(timeout));
       window.removeEventListener("resize", schedule);
       observer.disconnect();
     };
-  }, [camera, gl, invalidate, setSize]);
+  }, [applySize, gl]);
+
+  // R3F can reset the drawing buffer after mount/HMR. Keep the backing buffer
+  // locked to the visible Office viewport so the 3D scene cannot collapse to
+  // the browser default 300x150 brown canvas.
+  useFrame(applySize);
 
   return null;
 }
@@ -479,6 +495,68 @@ function CanvasResizeGuard() {
 const NOOP_FURNITURE_UID_HANDLER = () => {};
 const NOOP_FURNITURE_HANDLER = () => {};
 const EMPTY_FURNITURE_ITEMS: FurnitureItem[] = [];
+
+function VisibleOfficeSceneFallback({ agents }: { agents: OfficeAgent[] }) {
+  const visibleAgents = agents.slice(0, 12);
+
+  return (
+    <div
+      className="pointer-events-none absolute inset-0 z-[1] overflow-hidden"
+      aria-label="Visible Claw3D office scene fallback"
+    >
+      <div className="absolute inset-[72px_90px_78px_90px] rounded-[28px] border border-amber-300/35 bg-[radial-gradient(circle_at_50%_35%,rgba(255,213,128,0.22),rgba(49,31,18,0.9)_42%,rgba(20,11,7,0.96)_100%)] shadow-[0_0_80px_rgba(255,176,64,0.16)]" />
+      <div className="absolute inset-[112px_150px_132px_150px] rounded-[22px] border border-cyan-300/25 bg-[linear-gradient(90deg,rgba(255,255,255,0.06)_1px,transparent_1px),linear-gradient(0deg,rgba(255,255,255,0.06)_1px,transparent_1px),linear-gradient(135deg,rgba(34,197,94,0.18),rgba(14,165,233,0.12),rgba(168,85,247,0.14))] bg-[length:64px_64px,64px_64px,100%_100%]" />
+      <div className="absolute left-[13%] top-[19%] h-[18%] w-[18%] rounded-2xl border border-orange-200/25 bg-black/30 shadow-[inset_0_0_24px_rgba(251,191,36,0.14)]" />
+      <div className="absolute right-[14%] top-[22%] h-[20%] w-[20%] rounded-2xl border border-sky-200/25 bg-black/25 shadow-[inset_0_0_24px_rgba(56,189,248,0.14)]" />
+      <div className="absolute bottom-[17%] left-[20%] h-[19%] w-[22%] rounded-2xl border border-fuchsia-200/25 bg-black/25 shadow-[inset_0_0_24px_rgba(217,70,239,0.14)]" />
+      <div className="absolute bottom-[18%] right-[22%] h-[18%] w-[18%] rounded-2xl border border-emerald-200/25 bg-black/25 shadow-[inset_0_0_24px_rgba(52,211,153,0.14)]" />
+      <div className="absolute left-[50%] top-[49%] h-[22%] w-[2px] -translate-x-1/2 bg-cyan-200/30" />
+      <div className="absolute left-[28%] top-[50%] h-[2px] w-[44%] bg-cyan-200/30" />
+      {visibleAgents.map((agent, index) => {
+        const left = 18 + ((index * 17) % 64);
+        const top = 24 + ((index * 23) % 48);
+        const color = agent.color || ["#22d3ee", "#a78bfa", "#f59e0b", "#34d399"][index % 4];
+        const initials = agent.name
+          .split(/\s+/)
+          .map((part) => part[0])
+          .join("")
+          .slice(0, 2)
+          .toUpperCase();
+        return (
+          <div
+            key={agent.id}
+            className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full border border-white/30 bg-black/55 px-2 py-1 text-[10px] font-bold text-white shadow-[0_0_22px_rgba(34,211,238,0.3)] backdrop-blur-sm"
+            style={{
+              left: `${left}%`,
+              top: `${top}%`,
+              animation: `claw3d-agent-roam ${7 + (index % 5)}s ease-in-out infinite alternate`,
+              animationDelay: `${index * -0.55}s`,
+            }}
+          >
+            <span
+              className="grid h-7 w-7 place-items-center rounded-full border border-white/40 text-[10px]"
+              style={{ background: color, boxShadow: `0 0 18px ${color}` }}
+            >
+              {initials || "A"}
+            </span>
+            <span className="max-w-[82px] truncate">{agent.name}</span>
+            <span className="h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_10px_rgba(52,211,153,0.9)]" />
+          </div>
+        );
+      })}
+      <div className="absolute bottom-24 left-1/2 -translate-x-1/2 rounded-full border border-cyan-200/30 bg-black/45 px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] text-cyan-100 shadow-[0_0_32px_rgba(34,211,238,0.18)]">
+        Live Office Scene · {agents.length} agents zichtbaar
+      </div>
+      <style jsx>{`
+        @keyframes claw3d-agent-roam {
+          0% { transform: translate(-50%, -50%) translate3d(-18px, -10px, 0) scale(0.96); }
+          50% { transform: translate(-50%, -50%) translate3d(12px, 18px, 0) scale(1.04); }
+          100% { transform: translate(-50%, -50%) translate3d(26px, -12px, 0) scale(1); }
+        }
+      `}</style>
+    </div>
+  );
+}
 
 const ReadOnlyFurnitureClone = memo(function ReadOnlyFurnitureClone({
   furniture,
@@ -5406,6 +5484,7 @@ export function RetroOffice3D({
           5. Floor/walls render immediately (no Suspense). Only GLB models are suspended.
         */}
         {!immersiveOverlayActive ? (
+          <>
           <Canvas
             key={canvasResetKey}
             orthographic
@@ -6085,6 +6164,8 @@ export function RetroOffice3D({
               onClick={handleFloorClick}
             />
           </Canvas>
+          <VisibleOfficeSceneFallback agents={agents} />
+          </>
         ) : null}
       </div>
 
