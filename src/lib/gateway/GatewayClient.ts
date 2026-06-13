@@ -931,7 +931,7 @@ export const useGatewayConnection = (
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
         try {
           await client.connect({
-            gatewayUrl: resolveStudioProxyGatewayUrl(),
+            gatewayUrl: resolveStudioProxyGatewayUrl(gatewayUrl),
             token,
             authScopeKey: gatewayUrl,
             clientName: resolveGatewayClientName(selectedAdapterType, gatewayUrl),

@@ -232,6 +232,53 @@ const ITEMS = [
 const GYM_WORKOUT_LATCH_MS = 60_000;
 const MAIN_AGENT_ID = "main";
 const DEMO_MAIN_SESSION_KEY = buildAgentMainSessionKey(MAIN_AGENT_ID, "main");
+
+const areNumberRecordsEqual = (
+  left: Record<string, number>,
+  right: Record<string, number>,
+) => {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key) => left[key] === right[key])
+  );
+};
+
+const buildPhoneCallRequestSignature = (
+  requests: Record<string, OfficePhoneCallRequest>,
+) =>
+  JSON.stringify(
+    Object.entries(requests)
+      .sort(([leftAgentId], [rightAgentId]) =>
+        leftAgentId.localeCompare(rightAgentId),
+      )
+      .map(([agentId, request]) => [
+        agentId,
+        request.key,
+        request.phase,
+        request.callee,
+        request.message ?? "",
+      ]),
+  );
+
+const buildTextMessageRequestSignature = (
+  requests: Record<string, OfficeTextMessageRequest>,
+) =>
+  JSON.stringify(
+    Object.entries(requests)
+      .sort(([leftAgentId], [rightAgentId]) =>
+        leftAgentId.localeCompare(rightAgentId),
+      )
+      .map(([agentId, request]) => [
+        agentId,
+        request.key,
+        request.phase,
+        request.recipient,
+        request.message ?? "",
+      ]),
+  );
+
 const createDemoMainAgentSeed = (): {
   agentId: string;
   name: string;
@@ -1008,6 +1055,7 @@ export function OfficeScreen({
   const [gymCooldownUntilByAgentId, setGymCooldownUntilByAgentId] = useState<
     Record<string, number>
   >({});
+  const gymCooldownUntilRef = useRef<Record<string, number>>({});
   const prevImmediateGymHoldRef = useRef<Record<string, boolean>>({});
   const [monitorAgentId, setMonitorAgentId] = useState<string | null>(null);
   const [githubReviewAgentId, setGithubReviewAgentId] = useState<string | null>(
@@ -3198,6 +3246,18 @@ export function OfficeScreen({
     textMessageByAgentId,
     workingUntilByAgentId,
   } = officeAnimationState;
+  const phoneCallByAgentIdRef = useRef(phoneCallByAgentId);
+  const textMessageByAgentIdRef = useRef(textMessageByAgentId);
+  phoneCallByAgentIdRef.current = phoneCallByAgentId;
+  textMessageByAgentIdRef.current = textMessageByAgentId;
+  const phoneCallRequestSignature = useMemo(
+    () => buildPhoneCallRequestSignature(phoneCallByAgentId),
+    [phoneCallByAgentId],
+  );
+  const textMessageRequestSignature = useMemo(
+    () => buildTextMessageRequestSignature(textMessageByAgentId),
+    [textMessageByAgentId],
+  );
   const immediateGymHoldByAgentId = useMemo(
     () => ({
       ...marketplaceGymHoldByAgentId,
@@ -3205,48 +3265,60 @@ export function OfficeScreen({
     }),
     [marketplaceGymHoldByAgentId, skillGymHoldByAgentId],
   );
-
-  useEffect(() => {
-    const now = Date.now();
-    setGymCooldownUntilByAgentId((previous) => {
-      const next: Record<string, number> = {};
-      for (const agent of state.agents) {
-        const agentId = agent.agentId;
-        const immediateHeld = Boolean(immediateGymHoldByAgentId[agentId]);
-        const wasImmediateHeld =
-          prevImmediateGymHoldRef.current[agentId] ?? false;
-        const previousUntil = previous[agentId] ?? 0;
-        if (immediateHeld) {
-          if (previousUntil > now) {
-            next[agentId] = previousUntil;
-          }
-          continue;
-        }
-        if (wasImmediateHeld) {
-          next[agentId] = now + GYM_WORKOUT_LATCH_MS;
-          continue;
-        }
-        if (previousUntil > now) {
-          next[agentId] = previousUntil;
-        }
-      }
-      prevImmediateGymHoldRef.current = Object.fromEntries(
+  const immediateGymHoldSignature = useMemo(
+    () =>
+      JSON.stringify(
         state.agents.map((agent) => [
           agent.agentId,
           Boolean(immediateGymHoldByAgentId[agent.agentId]),
         ]),
-      );
-      const prevKeys = Object.keys(previous);
-      const nextKeys = Object.keys(next);
-      if (
-        prevKeys.length === nextKeys.length &&
-        nextKeys.every((key) => previous[key] === next[key])
-      ) {
-        return previous;
+      ),
+    [immediateGymHoldByAgentId, state.agents],
+  );
+
+  useEffect(() => {
+    const now = Date.now();
+    const immediateGymHoldEntries = JSON.parse(immediateGymHoldSignature) as Array<
+      [string, boolean]
+    >;
+    const previousImmediateGymHoldByAgentId = prevImmediateGymHoldRef.current;
+    const currentImmediateGymHoldByAgentId = Object.fromEntries(
+      immediateGymHoldEntries,
+    );
+    const previousCooldownUntilByAgentId = gymCooldownUntilRef.current;
+    const nextCooldownUntilByAgentId: Record<string, number> = {};
+
+    for (const [agentId, immediateHeld] of immediateGymHoldEntries) {
+      const wasImmediateHeld =
+        previousImmediateGymHoldByAgentId[agentId] ?? false;
+      const previousUntil = previousCooldownUntilByAgentId[agentId] ?? 0;
+      if (immediateHeld) {
+        if (previousUntil > now) {
+          nextCooldownUntilByAgentId[agentId] = previousUntil;
+        }
+        continue;
       }
-      return next;
-    });
-  }, [immediateGymHoldByAgentId, state.agents]);
+      if (wasImmediateHeld) {
+        nextCooldownUntilByAgentId[agentId] = now + GYM_WORKOUT_LATCH_MS;
+        continue;
+      }
+      if (previousUntil > now) {
+        nextCooldownUntilByAgentId[agentId] = previousUntil;
+      }
+    }
+
+    prevImmediateGymHoldRef.current = currentImmediateGymHoldByAgentId;
+    if (
+      areNumberRecordsEqual(
+        previousCooldownUntilByAgentId,
+        nextCooldownUntilByAgentId,
+      )
+    ) {
+      return;
+    }
+    gymCooldownUntilRef.current = nextCooldownUntilByAgentId;
+    setGymCooldownUntilByAgentId(nextCooldownUntilByAgentId);
+  }, [immediateGymHoldSignature]);
 
   const activeGithubReviewAgentId = useMemo(
     () =>
@@ -3280,7 +3352,7 @@ export function OfficeScreen({
 
   useEffect(() => {
     const activeKeys = new Set(
-      Object.values(phoneCallByAgentId).map((request) => request.key),
+      Object.values(phoneCallByAgentIdRef.current).map((request) => request.key),
     );
     promptedPhoneCallKeysRef.current = new Set(
       [...promptedPhoneCallKeysRef.current].filter((key) => activeKeys.has(key)),
@@ -3303,14 +3375,14 @@ export function OfficeScreen({
       }
       return next;
     });
-  }, [phoneCallByAgentId]);
+  }, [phoneCallRequestSignature]);
 
   useEffect(() => {
-    const requests = Object.entries(phoneCallByAgentId);
+    const requests = Object.entries(phoneCallByAgentIdRef.current);
     if (requests.length === 0) return;
 
     const appendPromptForAgent = (agentId: string, request: OfficePhoneCallRequest) => {
-      const agent = state.agents.find((entry) => entry.agentId === agentId);
+      const agent = stateRef.current.agents.find((entry) => entry.agentId === agentId);
       if (!agent) return;
       promptedPhoneCallKeysRef.current.add(request.key);
       void fetch("/api/office/call", {
@@ -3388,7 +3460,7 @@ export function OfficeScreen({
         prepareScenarioForAgent(agentId, request);
       }
     }
-  }, [dispatch, focusLocalAgent, phoneCallByAgentId, state.agents]);
+  }, [dispatch, focusLocalAgent, phoneCallRequestSignature]);
 
   const activePhoneBoothAgentId = useMemo(
     () =>
@@ -3443,7 +3515,7 @@ export function OfficeScreen({
 
   useEffect(() => {
     const activeKeys = new Set(
-      Object.values(textMessageByAgentId).map((request) => request.key),
+      Object.values(textMessageByAgentIdRef.current).map((request) => request.key),
     );
     promptedTextMessageKeysRef.current = new Set(
       [...promptedTextMessageKeysRef.current].filter((key) => activeKeys.has(key)),
@@ -3463,14 +3535,14 @@ export function OfficeScreen({
       }
       return next;
     });
-  }, [textMessageByAgentId]);
+  }, [textMessageRequestSignature]);
 
   useEffect(() => {
-    const requests = Object.entries(textMessageByAgentId);
+    const requests = Object.entries(textMessageByAgentIdRef.current);
     if (requests.length === 0) return;
 
     const appendPromptForAgent = (agentId: string, request: OfficeTextMessageRequest) => {
-      const agent = state.agents.find((entry) => entry.agentId === agentId);
+      const agent = stateRef.current.agents.find((entry) => entry.agentId === agentId);
       if (!agent) return;
       promptedTextMessageKeysRef.current.add(request.key);
       void fetch("/api/office/text", {
@@ -3548,7 +3620,7 @@ export function OfficeScreen({
         prepareScenarioForAgent(agentId, request);
       }
     }
-  }, [dispatch, focusLocalAgent, state.agents, textMessageByAgentId]);
+  }, [dispatch, focusLocalAgent, textMessageRequestSignature]);
 
   const activeSmsBoothAgentId = useMemo(
     () =>
