@@ -61,6 +61,9 @@ const HERMES_API_KEY = process.env.HERMES_API_KEY || "";
 const ADAPTER_PORT = parseInt(process.env.HERMES_ADAPTER_PORT || "18789", 10);
 const HERMES_MODEL = process.env.HERMES_MODEL || "hermes";
 const HERMES_AGENT_NAME = process.env.HERMES_AGENT_NAME || "Hermes";
+const CLAW3D_BACKEND_URL = (process.env.CLAW3D_BACKEND_URL || "http://127.0.0.1:8095").replace(/\/$/, "");
+const CLAW3D_BACKEND_SYNC_ENABLED = process.env.CLAW3D_BACKEND_SYNC_ENABLED !== "0";
+const CLAW3D_BACKEND_SYNC_TTL_MS = parseInt(process.env.CLAW3D_BACKEND_SYNC_TTL_MS || "15000", 10);
 const HOME = process.env.HOME || "/tmp";
 
 const AGENT_ID = "hermes";
@@ -232,6 +235,9 @@ const agentRegistry = new Map([
   }],
 ]);
 
+let lastBackendAgentSyncAt = 0;
+let backendAgentSyncInFlight = null;
+
 // Set of all active sendEvent functions (one per connected WS client)
 /** @type {Set<(frame: object) => void>} */
 const activeSendEventFns = new Set();
@@ -349,6 +355,137 @@ async function readJsonBody(res) {
   const raw = Buffer.concat(chunks).toString("utf8");
   if (!raw.trim()) return {};
   return JSON.parse(raw);
+}
+
+async function fetchJsonUrl(urlStr, timeoutMs = 3000) {
+  const url = new URL(urlStr);
+  const transport = url.protocol === "https:" ? https : http;
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timeout = null;
+    const cleanup = () => {
+      if (timeout) {
+        clearTimeout(timeout);
+        timeout = null;
+      }
+    };
+    const settle = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      fn(value);
+    };
+    const req = transport.request(
+      {
+        hostname: url.hostname,
+        port: url.port ? parseInt(url.port, 10) : (url.protocol === "https:" ? 443 : 80),
+        path: url.pathname + (url.search || ""),
+        method: "GET",
+      },
+      async (res) => {
+        try {
+          const body = await readJsonBody(res);
+          if (res.statusCode >= 400) {
+            settle(reject, new Error(`HTTP ${res.statusCode}`));
+            return;
+          }
+          settle(resolve, body);
+        } catch (error) {
+          settle(reject, error);
+        }
+      }
+    );
+    timeout = setTimeout(() => {
+      const error = new Error("timeout");
+      req.destroy(error);
+      settle(reject, error);
+    }, timeoutMs);
+    req.on("error", (error) => settle(reject, error));
+    req.end();
+  });
+}
+
+function normalizeBackendAgent(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const rawId = typeof raw.id === "string" ? raw.id : typeof raw.agent_id === "string" ? raw.agent_id : "";
+  const originalId = rawId.trim();
+  const id = originalId.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-|-$/g, "");
+  if (!id || id === AGENT_ID) return null;
+  const rawName = typeof raw.name === "string" ? raw.name.trim() : id;
+  const name = rawName || id;
+  const task = typeof raw.task === "string" ? raw.task.trim() : "";
+  const room = typeof raw.room === "string" ? raw.room.trim() : "";
+  const role = task || room || (typeof raw.model_role === "string" ? raw.model_role.trim() : "") || "NovaMaster agent";
+  return {
+    id,
+    name,
+    workspace: `${HOME}/.hermes/workspace-${id}`,
+    role,
+    systemPrompt: `You are ${name}, a NovaMaster Claw3D-visible agent.${task ? ` Current task: ${task}.` : ""}`,
+    settings: {
+      wipe: false,
+      continuity: true,
+      model: typeof raw.model === "string" && raw.model.trim() ? raw.model.trim() : HERMES_MODEL,
+    },
+    identity: {
+      name,
+      emoji: typeof raw.identity_emoji === "string" && raw.identity_emoji.trim() ? raw.identity_emoji.trim() : "🤖",
+    },
+    backend: {
+      source: "claw3d-backend",
+      originalId,
+      room,
+      status: typeof raw.status === "string" ? raw.status : "",
+      task,
+    },
+  };
+}
+
+async function syncBackendAgents(options = {}) {
+  if (!CLAW3D_BACKEND_SYNC_ENABLED) return;
+  const now = Date.now();
+  if (!options.force && now - lastBackendAgentSyncAt < CLAW3D_BACKEND_SYNC_TTL_MS) return;
+  if (backendAgentSyncInFlight) return backendAgentSyncInFlight;
+  backendAgentSyncInFlight = (async () => {
+    try {
+      const payload = await fetchJsonUrl(`${CLAW3D_BACKEND_URL}/api/agents`);
+      const backendAgents = Array.isArray(payload?.agents) ? payload.agents : [];
+      const seenBackendIds = new Map();
+      let added = 0;
+      let updated = 0;
+      for (const rawAgent of backendAgents) {
+        const normalized = normalizeBackendAgent(rawAgent);
+        if (!normalized) continue;
+        const originalId = normalized.backend?.originalId || normalized.id;
+        const seenOriginalId = seenBackendIds.get(normalized.id);
+        if (seenOriginalId && seenOriginalId !== originalId) {
+          console.warn(`[hermes-adapter] Skipping backend agent id collision: ${normalized.id}`);
+          continue;
+        }
+        const existing = agentRegistry.get(normalized.id);
+        const existingOriginalId = existing?.backend?.originalId;
+        if (existingOriginalId && existingOriginalId !== originalId) {
+          console.warn(`[hermes-adapter] Skipping backend agent id collision: ${normalized.id}`);
+          continue;
+        }
+        seenBackendIds.set(normalized.id, originalId);
+        agentRegistry.set(normalized.id, { ...(existing || {}), ...normalized });
+        if (existing) updated += 1;
+        else added += 1;
+      }
+      lastBackendAgentSyncAt = Date.now();
+      if (added || updated) {
+        console.log(
+          `[hermes-adapter] Synced backend agents: added=${added} updated=${updated} total=${agentRegistry.size}`
+        );
+      }
+    } catch (error) {
+      console.warn(`[hermes-adapter] Backend agent sync skipped: ${sanitizeErrorMessage(error)}`);
+    } finally {
+      backendAgentSyncInFlight = null;
+    }
+  })();
+  return backendAgentSyncInFlight;
 }
 
 function sanitizeErrorMessage(error) {
@@ -832,9 +969,10 @@ async function handleMethod(method, params, id, sendEvent) {
     // --- Agent management ---------------------------------------------------
 
     case "agents.list": {
+      await syncBackendAgents();
       const allAgents = [...agentRegistry.values()].map((agent) => ({
         id: agent.id, name: agent.name, workspace: agent.workspace,
-        identity: { name: agent.name, emoji: "🤖" },
+        identity: agent.identity || { name: agent.name, emoji: "🤖" },
         role: agent.role,
       }));
       return resOk(id, { defaultId: AGENT_ID, mainKey: MAIN_KEY, agents: allAgents });
@@ -1212,6 +1350,7 @@ function startAdapter() {
       if (typeof id !== "string" || typeof method !== "string") return;
 
       if (method === "connect") {
+        await syncBackendAgents({ force: true });
         connected = true;
         const allAgents = [...agentRegistry.values()].map((a) => ({ agentId: a.id, name: a.name, isDefault: a.id === AGENT_ID }));
         send({
