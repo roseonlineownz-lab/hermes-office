@@ -4500,8 +4500,14 @@ export function OfficeScreen({
     [marketplace.skillsReport],
   );
   const taskManagerReady = useMemo(
-    () => (taskManagerSkill ? deriveSkillReadinessState(taskManagerSkill) === "ready" : false),
-    [taskManagerSkill],
+    () =>
+      (taskManagerSkill ? deriveSkillReadinessState(taskManagerSkill) === "ready" : false) ||
+      (taskBoard.taskCaptureDebug.sharedTasksSupported && !taskBoard.sharedTasksError),
+    [
+      taskBoard.sharedTasksError,
+      taskBoard.taskCaptureDebug.sharedTasksSupported,
+      taskManagerSkill,
+    ],
   );
   const soundclawReady = useMemo(
     () => (soundclawSkill ? deriveSkillReadinessState(soundclawSkill) === "ready" : false),
