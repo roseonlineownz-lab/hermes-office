@@ -1,79 +1,50 @@
 ---
 name: n8n-trigger
-description: Trigger and monitor n8n workflows from the office. List active workflows, fire webhooks, check executions. Use when the user wants to run an automation, fire a webhook, or inspect workflow status.
+description: Inspect n8n workflows and safely dispatch only approved webhooks, with receipts.
 metadata: {"openclaw":{"skillKey":"n8n-trigger"}}
 ---
 
-# n8n Trigger
+# n8n integration for Hermes Office
 
-Use this skill when the user asks to run a workflow, fire an automation, check workflow status, or list available n8n flows.
+Use this skill when a user asks to inspect workflow status, recent executions, or run an approved n8n automation.
 
-## Trigger
+## Ownership and ports
 
-```json
-{
-  "activation": {
-    "anyPhrases": [
-      "run workflow",
-      "trigger workflow",
-      "fire automation",
-      "n8n",
-      "list workflows",
-      "execute flow",
-      "check execution",
-      "workflow status",
-      "automation status"
-    ]
-  },
-  "movement": {
-    "target": "computer",
-    "skipIfAlreadyThere": true
-  }
-}
-```
+- n8n API: `http://127.0.0.1:5678/api/v1` **from the n8n host**, or the specifically configured internal n8n URL.
+- Agent OS is the cockpit on **3737**, not 3000. Check its `/api/n8n/status` and `/api/orchestration/status` for shared readiness.
+- AgentBus/EventBus owns task identity and receipts. All dispatches must carry the same `task_id` as Jarvis and StarNet.
+- Access from mobile requires a secured HTTPS hostname/tunnel, not `127.0.0.1` in the phone browser.
 
-When activated, the agent walks to the workstation computer to interact with n8n.
+## Read-only discovery
 
-## Endpoint
+1. Verify `GET /healthz` and `GET /healthz/readiness` before assuming n8n is operational.
+2. Use the official n8n public API `GET /api/v1/workflows?limit=100` with a securely configured `X-N8N-API-KEY` header. Never print or copy credential values into chat, logs, reports or source control.
+3. Treat a missing/expired key as **inventory unknown**, not as zero workflows or n8n offline.
+4. The API is paginated; follow `nextCursor` if a complete list is needed. For a quick check, explicitly label the first page partial.
+5. For recent executions use authenticated `GET /api/v1/executions?workflowId=...` with a bounded result limit, and report only the verified execution ID, outcome and receipt link.
 
-n8n REST API: `http://127.0.0.1:5678/api/v1`
+## Approved trigger rule
 
-Auth: header `X-N8N-API-KEY: <token>` — read token from `~/.n8n/.env` or `OPENCLAW_STATE_DIR/n8n/api-key`.
+A workflow **ID is not a webhook path**. Never guess `/webhook/<workflow-id>` or rely on the legacy/unverified `POST /workflows/<id>/run` shortcut.
 
-Key endpoints:
+- Identify the exact workflow by API result, inspect its trigger node and registered webhook path.
+- Require the operator-approved workflow and payload, with a documented explicit webhook path.
+- Only send a request to the configured workflow endpoint; do not route arbitrary text to a URL or allow an agent to pick a path.
+- Use the webhook's configured authentication, idempotency/receipt handling and request timeout. Do not activate or deactivate workflows as part of a status query.
+- For destructive, external publishing, payment, credential, deploy, filesystem write or paid model tasks, obtain explicit user approval before triggering. A background agent cannot self-approve.
 
-- `GET /workflows?active=true` — list active workflows
-- `GET /workflows/{id}` — workflow detail
-- `POST /workflows/{id}/activate` / `/deactivate` — toggle workflow
-- `GET /executions?workflowId={id}&limit=5` — recent executions
-- `POST /webhook/<path>` — fire a webhook trigger (no auth header needed for webhook URLs)
+## Execution proof
 
-## Workflow
+Report a real n8n execution ID **only after** the execution API confirms it. HTTP 200/202 from a webhook confirms delivery/acknowledgment, not successful downstream execution. Preserve the `task_id`, timestamp, target lane, approval source, event ID, completion status, and durable receipt reference.
 
-1. List active workflows with `GET /workflows?active=true`.
-2. If user names a workflow, match by `name` (case-insensitive, fuzzy).
-3. To trigger:
-   - **Webhook trigger** → POST to `http://127.0.0.1:5678/webhook/<path>` with the user's payload.
-   - **Manual trigger** → call `POST /workflows/{id}/run` (n8n 1.x).
-4. Poll `GET /executions?workflowId={id}&limit=1` until `finished=true` or 30s elapsed.
-5. Report `status` (success/error), execution id, and `data.resultData` summary.
+If host routing, API access, webhook credential or approval cannot be verified: **do not execute**. Surface the blocker and show the expected next step.
 
-## Response rules
+## Suggested NovaMaster lanes
 
-- Confirm which workflow was triggered with id and name.
-- If multiple workflows match the user's request, ask which one before firing.
-- Never trigger destructive workflows (delete, drop, force-push) without explicit confirmation.
-- Surface execution errors verbatim — do not paraphrase failures.
+- Lead Machine events: EventBus 5670 plus n8n 5678, correlated with `task_id`.
+- CrewAI: 8135 for specialist research teams.
+- LangGraph: 8127/8128 for stateful execution, with policy and receipt gates.
+- Hermes: conversational control and human approval.
+- Jarvis/RACK/StarNet: visualize evidence; UI alone does not imply an agent is working.
 
-## Common workflows in this stack
-
-- `lead-enrichment` — process incoming leads
-- `daily-digest` — summary email
-- `voice-loop` — Telegram voice processing
-- `office-checkin` — agent presence updates
-
-## Failure handling
-
-- If 401, refresh API key from env and retry once.
-- If 404, list workflows and suggest closest match.
-- If webhook target is paused, surface that and offer to activate first.
+Keep the existing n8n service and any live workflows unchanged when applying this skill update.
